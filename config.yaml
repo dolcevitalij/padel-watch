@@ -1,0 +1,24 @@
+day_close: '24:00'
+day_open: '00:00'
+days_ahead: 14
+id_cuadro: '4'
+max_messages: 10
+notify_on_error: true
+rules:
+- courts: []
+  duration: 90
+  name: Feierabend Mo/Mi/Fr
+  time_from: '18:00'
+  time_to: '23:00'
+  weekdays:
+  - Mo
+  - Mi
+  - Fr
+- courts: []
+  duration: 90
+  name: Wochenende vormittags
+  time_from: 09:00
+  time_to: '13:00'
+  weekdays:
+  - Sa
+  - So

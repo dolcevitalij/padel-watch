@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Padel-Watch · Testkonsole</title>
+<style>
+  :root{
+    --bg:#0E1317; --panel:#161D24; --elev:#1C2530; --line:#26313D;
+    --ink:#E6EDF3; --mut:#7D8B9A;
+    --free:#35D08A; --busy:#EF4444; --win:#4C9AFF;
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:14px;line-height:1.5}
+  a{color:var(--win)}
+  header{border-bottom:1px solid var(--line);padding:18px 22px;display:flex;
+         align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{font-size:17px;margin:0;letter-spacing:.3px}
+  header .sub{color:var(--mut);font-size:12.5px}
+  .pill{margin-left:auto;font-family:var(--mono);font-size:12px;padding:4px 10px;
+        border:1px solid var(--line);border-radius:999px;color:var(--mut)}
+  .pill.ok{color:var(--free);border-color:var(--free)}
+  .pill.err{color:var(--busy);border-color:var(--busy)}
+  main{max-width:1000px;margin:0 auto;padding:22px;display:grid;gap:20px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+        padding:18px 20px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:1.2px;
+           color:var(--mut);margin:0 0 16px;font-weight:600}
+  label{display:block;font-size:12px;color:var(--mut);margin:0 0 5px}
+  input,select{background:var(--elev);border:1px solid var(--line);color:var(--ink);
+        border-radius:7px;padding:8px 10px;font:inherit;width:100%}
+  input:focus,select:focus{outline:2px solid var(--win);outline-offset:-1px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .row>div{flex:1;min-width:120px}
+  .mono{font-family:var(--mono)}
+  button{background:var(--elev);border:1px solid var(--line);color:var(--ink);
+        border-radius:7px;padding:9px 15px;font:inherit;cursor:pointer}
+  button:hover{border-color:var(--win)}
+  button.primary{background:var(--win);border-color:var(--win);color:#0B1220;font-weight:600}
+  button.ghost{background:transparent}
+  .btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+  .rule{border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:12px;
+        background:var(--elev)}
+  .rule .head{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+  .rule .head input{font-weight:600}
+  .days{display:flex;gap:6px;flex-wrap:wrap}
+  .day{font-family:var(--mono);font-size:12px;padding:5px 9px;border:1px solid var(--line);
+       border-radius:6px;cursor:pointer;user-select:none;color:var(--mut)}
+  .day.on{background:var(--win);border-color:var(--win);color:#0B1220;font-weight:600}
+  .courts-pick{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .courts-pick .day.on{background:var(--free);border-color:var(--free)}
+  .x{color:var(--mut);cursor:pointer;font-family:var(--mono);padding:4px 8px}
+  .x:hover{color:var(--busy)}
+  .x.go:hover{color:var(--win)}
+  .note{font-size:12px;color:var(--mut);margin-top:10px}
+  label.inline{display:flex;align-items:center;gap:7px;margin:0;font-size:12.5px;
+               cursor:pointer;white-space:nowrap}
+  label.inline input{width:auto}
+  .tag{font-family:var(--mono);font-size:12px;color:var(--mut);align-self:center}
+  .tag.warn{color:var(--win)}
+  /* Kontextzeile der Vorschau: welcher Wochentag, welche Regeln greifen */
+  .hint{font-size:12.5px;color:var(--mut);margin-top:12px;white-space:pre-wrap;
+        border-left:2px solid var(--line);padding:8px 0 8px 10px}
+  .hint:empty{display:none}
+  .hint.warn{border-color:var(--busy);color:var(--ink)}
+  .status{font-family:var(--mono);font-size:12.5px;margin-top:12px;padding:10px 12px;
+          border-radius:7px;border:1px solid var(--line);white-space:pre-wrap}
+  .status.ok{border-color:var(--free);color:var(--free)}
+  .status.err{border-color:var(--busy);color:var(--busy)}
+  /* Timeline */
+  .court{margin:14px 0}
+  .court .name{display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px}
+  .court .name .m{font-family:var(--mono);color:var(--free);font-size:12px}
+  /* --hourw wird beim Rendern gesetzt, damit die Stundenstreifen zur Spanne passen */
+  .track{position:relative;height:30px;border-radius:5px;background:
+        repeating-linear-gradient(90deg,transparent,transparent calc(var(--hourw,60px) - 1px),
+        var(--line) calc(var(--hourw,60px) - 1px),var(--line) var(--hourw,60px)),
+        var(--elev);border:1px solid var(--line);overflow:hidden}
+  .seg{position:absolute;top:0;bottom:0}
+  .seg.busy{background:rgba(239,68,68,.5)}
+  /* frei = ruhiges Gruen, buchbar = kraeftiger Balken darueber */
+  .seg.free{background:rgba(53,208,138,.14)}
+  .seg.hit{top:4px;bottom:4px;border-radius:3px;background:var(--free);
+           box-shadow:0 0 0 1px rgba(11,18,32,.45) inset,0 0 12px rgba(53,208,138,.45)}
+  .win{position:absolute;top:-4px;bottom:-4px;border-left:2px dashed var(--win);
+       border-right:2px dashed var(--win);background:rgba(76,154,255,.05)}
+  .axis{position:relative;height:16px;margin-top:3px;font-family:var(--mono);
+        font-size:10px;color:var(--mut)}
+  .axis span{position:absolute;transform:translateX(-50%)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:6px}
+  .legend b{display:inline-block;width:11px;height:11px;border-radius:3px;
+            vertical-align:-1px;margin-right:5px}
+  /* Telegram-Vorschau */
+  .tglabel{font-size:12px;color:var(--mut);margin:18px 0 7px}
+  .tglabel span{color:var(--mut);opacity:.8}
+  .tgstack{display:flex;flex-direction:column;gap:8px}
+  .tg{max-width:520px;background:#17232F;border:1px solid #24384C;
+      border-radius:12px 12px 12px 3px;padding:11px 14px;font-size:13.5px;
+      line-height:1.6;white-space:pre-wrap;word-break:break-word}
+  .tg b{color:#FFF}
+  .tg a{color:#6AB7FF}
+  .tg.empty{color:var(--mut);font-style:italic;white-space:normal}
+</style>
+</head>
+<body>
+<header>
+  <h1>Padel-Watch</h1>
+  <span class="sub">Lokale Test- &amp; Konfigurationskonsole</span>
+  <span id="conn" class="pill">nicht getestet</span>
+</header>
+
+<main>
+  <!-- KONFIGURATION -->
+  <section class="card" id="cfgCard">
+    <h2>Konfiguration</h2>
+    <div class="row">
+      <div><label>Plan-ID (Grid.aspx?id=)</label><input id="id_cuadro"></div>
+      <div><label>Tage im Voraus</label><input id="days_ahead" type="number" min="1" max="21"></div>
+      <div><label>Anlage öffnet</label><input id="day_open" class="mono" placeholder="07:00"></div>
+      <div><label>Anlage schließt</label><input id="day_close" class="mono" placeholder="23:00"></div>
+      <div><label title="Darüber hinaus fasst der Lauf zu einer Sammel-Nachricht zusammen">Max. Einzelnachrichten</label>
+        <input id="max_messages" type="number" min="1" max="50"></div>
+    </div>
+    <div style="margin-top:14px">
+      <label><input type="checkbox" id="notify_on_error" style="width:auto;margin-right:8px">
+        Bei Abruf-Fehlern eine Telegram-Warnung senden</label>
+    </div>
+
+    <h2 style="margin-top:22px">Regeln</h2>
+    <div id="rules"></div>
+    <div class="btnrow">
+      <button class="ghost" onclick="addRule()">+ Regel hinzufügen</button>
+      <button class="primary" onclick="saveConfig()">Konfiguration speichern</button>
+      <span id="cfgDirty" class="tag"></span>
+    </div>
+    <div id="cfgStatus"></div>
+  </section>
+
+  <!-- TESTS -->
+  <section class="card">
+    <h2>Verbindung &amp; key</h2>
+    <div class="btnrow">
+      <button onclick="testConn()">Verbindung testen</button>
+      <button onclick="testTg()">Telegram-Testnachricht senden</button>
+    </div>
+    <div id="connStatus"></div>
+    <div class="note">Nutzt <span class="mono">KEY_OVERRIDE</span> / <span class="mono">TELEGRAM_*</span>
+      aus den Umgebungsvariablen, falls gesetzt.</div>
+  </section>
+
+  <!-- VORSCHAU -->
+  <section class="card" id="pvCard">
+    <h2>Regel-Vorschau (ohne Telegram)</h2>
+    <div class="row">
+      <div><label>Datum</label><input id="pv_date" type="date"></div>
+      <div><label>von</label><input id="pv_from" class="mono" value="18:00"></div>
+      <div><label>bis</label><input id="pv_to" class="mono" value="21:30"></div>
+      <div><label>Dauer (Min)</label><input id="pv_dur" type="number" value="90" step="30"></div>
+    </div>
+    <label style="margin-top:12px">Courts (keine Auswahl = alle)</label>
+    <div id="pv_courts" class="courts-pick"></div>
+    <div id="pvHint" class="hint"></div>
+    <div class="btnrow">
+      <button class="primary" onclick="runPreview()">Vorschau anzeigen</button>
+      <label class="inline" title="Holt pro Slot einen Token vom Club-Server – nur einschalten, wenn du die echten Links sehen willst">
+        <input type="checkbox" id="pv_links"> echte Buchungs-Links holen
+      </label>
+    </div>
+    <div class="legend">
+      <span><b style="background:rgba(239,68,68,.5)"></b>belegt</span>
+      <span><b style="background:rgba(53,208,138,.14);border:1px solid var(--line)"></b>frei</span>
+      <span><b style="background:var(--free)"></b>buchbar (passt zur Regel)</span>
+      <span><b style="background:rgba(76,154,255,.5)"></b>Wunschfenster</span>
+    </div>
+    <div id="pvStatus"></div>
+    <div id="pvResult"></div>
+    <div id="pvMsg"></div>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const DAYS = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+let COURTS = [];
+let cfg = null;
+let loadedRule = null;   // welche Regel gerade in der Vorschau liegt
+let savedSnap = "";      // Stand der zuletzt gespeicherten config.yaml
+
+async function boot(){
+  COURTS = await (await fetch("/api/courts")).json();
+  cfg = await (await fetch("/api/config")).json();
+  $("#id_cuadro").value = cfg.id_cuadro;
+  $("#days_ahead").value = cfg.days_ahead;
+  $("#day_open").value = cfg.day_open;
+  $("#day_close").value = cfg.day_close;
+  $("#max_messages").value = cfg.max_messages ?? 10;
+  $("#notify_on_error").checked = !!cfg.notify_on_error;
+  renderRules();
+  renderCourtPicker();
+  const t = new Date(); t.setDate(t.getDate()+1);
+  $("#pv_date").value = t.toISOString().slice(0,10);
+
+  savedSnap = cfgSnapshot();
+  $("#cfgCard").addEventListener("input", refreshDirty);
+  ["#pv_date","#pv_from","#pv_to","#pv_dur"].forEach(s =>
+    $(s).addEventListener("input", updateDayHint));
+  refreshDirty();
+}
+
+function renderCourtPicker(){
+  $("#pv_courts").innerHTML = "";
+  COURTS.forEach(c=>{
+    const el = document.createElement("span");
+    el.className = "day"; el.textContent = c.name; el.dataset.id = c.id;
+    el.onclick = () => el.classList.toggle("on");
+    $("#pv_courts").appendChild(el);
+  });
+}
+
+function renderRules(){
+  const box = $("#rules"); box.innerHTML = "";
+  (cfg.rules||[]).forEach((r,i)=>{
+    const div = document.createElement("div"); div.className = "rule";
+    div.innerHTML = `
+      <div class="head">
+        <input value="${r.name||""}" oninput="cfg.rules[${i}].name=this.value" placeholder="Regelname">
+        <span class="x go" onclick="loadRuleToPreview(${i})" title="Zeiten, Dauer und Courts in die Vorschau übernehmen">→ Vorschau</span>
+        <span class="x" onclick="delRule(${i})">entfernen ✕</span>
+      </div>
+      <div class="days" id="days${i}"></div>
+      <div class="row" style="margin-top:12px">
+        <div><label>von</label><input class="mono" value="${r.time_from||''}" oninput="cfg.rules[${i}].time_from=this.value"></div>
+        <div><label>bis</label><input class="mono" value="${r.time_to||''}" oninput="cfg.rules[${i}].time_to=this.value"></div>
+        <div><label>Dauer (Min)</label><input type="number" step="30" value="${r.duration||90}" oninput="cfg.rules[${i}].duration=parseInt(this.value)"></div>
+      </div>
+      <label style="margin-top:12px">Courts (leer = alle)</label>
+      <div class="courts-pick" id="rcourts${i}"></div>`;
+    box.appendChild(div);
+    const dbox = div.querySelector("#days"+i);
+    DAYS.forEach(d=>{
+      const on = (r.weekdays||[]).includes(d);
+      const el = document.createElement("span");
+      el.className = "day"+(on?" on":""); el.textContent = d;
+      el.onclick = ()=>{ el.classList.toggle("on"); syncDays(i); };
+      dbox.appendChild(el);
+    });
+    const cbox = div.querySelector("#rcourts"+i);
+    COURTS.forEach(c=>{
+      const on = (r.courts||[]).includes(c.id);
+      const el = document.createElement("span");
+      el.className = "day"+(on?" on":""); el.textContent = c.name; el.dataset.id = c.id;
+      el.onclick = ()=>{ el.classList.toggle("on"); syncCourts(i); };
+      cbox.appendChild(el);
+    });
+  });
+}
+function syncDays(i){
+  cfg.rules[i].weekdays = [...document.querySelectorAll("#days"+i+" .on")].map(e=>e.textContent);
+  refreshDirty();
+}
+function syncCourts(i){
+  cfg.rules[i].courts = [...document.querySelectorAll("#rcourts"+i+" .on")].map(e=>e.dataset.id);
+  refreshDirty();
+}
+function addRule(){
+  cfg.rules = cfg.rules||[];
+  cfg.rules.push({name:"Neue Regel",weekdays:["Mo"],time_from:"18:00",time_to:"21:00",duration:90,courts:[]});
+  renderRules(); refreshDirty();
+}
+function delRule(i){ cfg.rules.splice(i,1); renderRules(); refreshDirty(); }
+
+/* ---------- Regel -> Vorschau ---------- */
+function weekdayOf(iso){
+  const d = new Date(iso+"T12:00:00");
+  return DAYS[(d.getDay()+6)%7];
+}
+function daysAhead(iso){
+  const a = new Date(iso+"T12:00:00"), b = new Date(); b.setHours(12,0,0,0);
+  return Math.round((a-b)/864e5);
+}
+function nextDateFor(weekdays){
+  const base = new Date(); base.setHours(12,0,0,0);
+  for(let i=1;i<=21;i++){
+    const d = new Date(base); d.setDate(d.getDate()+i);
+    const iso = new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
+    if(!weekdays.length || weekdays.includes(weekdayOf(iso))) return iso;
+  }
+  return $("#pv_date").value;
+}
+
+function loadRuleToPreview(i){
+  const r = cfg.rules[i] || {};
+  loadedRule = {name:r.name||"ohne Namen", weekdays:[...(r.weekdays||[])],
+                time_from:r.time_from||"", time_to:r.time_to||"", duration:r.duration||90};
+  $("#pv_from").value = loadedRule.time_from;
+  $("#pv_to").value   = loadedRule.time_to;
+  $("#pv_dur").value  = loadedRule.duration;
+  [...document.querySelectorAll("#pv_courts .day")].forEach(el =>
+    el.classList.toggle("on", (r.courts||[]).includes(el.dataset.id)));
+  $("#pv_date").value = nextDateFor(loadedRule.weekdays);
+  updateDayHint();
+  const soft = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  $("#pvCard").scrollIntoView({behavior: soft ? "smooth" : "auto", block:"start"});
+}
+
+/* Kontextzeile: passt das Datum ueberhaupt zu den Regeln? */
+function updateDayHint(){
+  const box = $("#pvHint"), iso = $("#pv_date").value;
+  if(!iso){ box.className="hint"; box.textContent=""; return; }
+  const wd = weekdayOf(iso);
+  const [y,m,d] = iso.split("-");
+  const plain = `${d}.${m}.${y}`, human = `${wd} ${plain}`;
+  const lines = [];
+  let warn = false;
+
+  if(loadedRule){
+    const drift = $("#pv_from").value !== loadedRule.time_from
+               || $("#pv_to").value   !== loadedRule.time_to
+               || String($("#pv_dur").value) !== String(loadedRule.duration);
+    lines.push(`Regel „${loadedRule.name}“ geladen${drift ? " · Werte inzwischen geändert" : ""}`);
+    if(!loadedRule.weekdays.includes(wd)){
+      warn = true;
+      lines.push(`⚠ Diese Regel gilt nur ${loadedRule.weekdays.join("/") || "an keinem Wochentag"}`
+               + ` — der ${plain} ist ein ${wd}. Der Produktivlauf würde an diesem Tag nichts melden.`);
+    }
+  }
+
+  const applies = (cfg.rules||[]).filter(r => (r.weekdays||[]).includes(wd));
+  if(applies.length){
+    lines.push(`${human} · greifende Regeln: ${applies.map(r=>r.name||"ohne Namen").join(", ")}`);
+  }else{
+    warn = true;
+    lines.push(`⚠ ${human} · keine Regel deckt diesen Wochentag ab — der Produktivlauf überspringt ihn.`);
+  }
+
+  const max = parseInt($("#days_ahead").value||"0"), ahead = daysAhead(iso);
+  if(ahead > max){
+    warn = true;
+    lines.push(`⚠ Datum liegt ${ahead} Tage voraus, „Tage im Voraus“ steht auf ${max}`
+             + ` — so weit schaut der Produktivlauf nicht.`);
+  }
+  if(cfgSnapshot() !== savedSnap){
+    lines.push("Ungespeicherte Änderungen: die Vorschau rechnet mit den gespeicherten Öffnungszeiten.");
+  }
+
+  box.className = "hint" + (warn ? " warn" : "");
+  box.textContent = lines.join("\n");
+}
+
+/* ---------- Speicherstand ---------- */
+function cfgSnapshot(){
+  return JSON.stringify({
+    id_cuadro: $("#id_cuadro").value,
+    days_ahead: parseInt($("#days_ahead").value),
+    day_open: $("#day_open").value,
+    day_close: $("#day_close").value,
+    max_messages: parseInt($("#max_messages").value),
+    rules: cfg && cfg.rules || [],
+    notify_on_error: $("#notify_on_error").checked,
+  });
+}
+function refreshDirty(){
+  const el = $("#cfgDirty"), dirty = cfgSnapshot() !== savedSnap;
+  el.textContent = dirty ? "ungespeichert" : "gespeichert";
+  el.className = "tag" + (dirty ? " warn" : "");
+  updateDayHint();
+}
+
+async function saveConfig(){
+  cfg.id_cuadro = $("#id_cuadro").value;
+  cfg.days_ahead = parseInt($("#days_ahead").value);
+  cfg.day_open = $("#day_open").value;
+  cfg.day_close = $("#day_close").value;
+  cfg.max_messages = parseInt($("#max_messages").value);
+  cfg.notify_on_error = $("#notify_on_error").checked;
+  const r = await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cfg)});
+  const j = await r.json();
+  setStatus("#cfgStatus", j.ok, j.ok ? "Gespeichert." : ("Fehler: "+(j.error||"?")));
+  if(j.ok){ savedSnap = cfgSnapshot(); }
+  refreshDirty();
+}
+
+function setStatus(sel, ok, msg){
+  const el = $(sel); el.className = "status "+(ok?"ok":"err"); el.textContent = msg;
+}
+
+async function testConn(){
+  setStatus("#connStatus", true, "Teste …");
+  const j = await (await fetch("/api/test-connection",{method:"POST"})).json();
+  if(j.ok){
+    $("#conn").className = "pill ok"; $("#conn").textContent = "verbunden";
+    setStatus("#connStatus", true, "OK ("+j.date+"):\n"+j.courts.map(c=>`  [${c.id}] ${c.name} — ${c.count} Belegungen`).join("\n"));
+  }else{
+    $("#conn").className = "pill err"; $("#conn").textContent = "Fehler";
+    setStatus("#connStatus", false, "Fehler: "+j.error);
+  }
+}
+async function testTg(){
+  setStatus("#connStatus", true, "Sende …");
+  const j = await (await fetch("/api/test-telegram",{method:"POST"})).json();
+  setStatus("#connStatus", j.ok, j.ok ? "Telegram-Testnachricht gesendet." : ("Fehler: "+j.error));
+}
+
+async function runPreview(){
+  const courts = [...document.querySelectorAll("#pv_courts .on")].map(e=>e.dataset.id);
+  const body = {date:$("#pv_date").value, time_from:$("#pv_from").value,
+    time_to:$("#pv_to").value, duration:$("#pv_dur").value, courts,
+    rule: loadedRule ? loadedRule.name : null,    // Regelname erscheint in der Nachricht
+    links: $("#pv_links").checked};               // Buchungs-Token pro Slot holen
+  setStatus("#pvStatus", true, "Lade …"); $("#pvResult").innerHTML=""; $("#pvMsg").innerHTML="";
+  const j = await (await fetch("/api/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
+  if(!j.ok){ setStatus("#pvStatus", false, "Fehler: "+j.error); return; }
+  setStatus("#pvStatus", true, j.count+" passende freie Startzeit(en) gefunden.");
+  renderTimelines(j);
+  renderMessage(j);
+}
+
+/* Nachricht so anzeigen, wie Telegram sie rendert: erlaubt sind <b> und <a>.
+   Ein Durchgang, damit fertige Links nicht doppelt verlinkt werden. */
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+                  .replace(/"/g,"&quot;");
+function tgHtml(s){
+  const link = u => `<a href="${esc(u)}" target="_blank" rel="noopener">`;
+  return s.replace(/<a href="([^"]+)">([^<]*)<\/a>|<(\/?b)>|(https?:\/\/[^\s<]+)|([&<>])/g,
+    (m, url, txt, btag, bare, chr) => {
+      if(url !== undefined) return link(url) + esc(txt) + "</a>";
+      if(btag) return `<${btag}>`;
+      if(bare) return link(bare) + esc(bare) + "</a>";
+      return chr === "&" ? "&amp;" : chr === "<" ? "&lt;" : "&gt;";
+    });
+}
+
+function renderMessage(j){
+  const box = $("#pvMsg"), msgs = j.messages || [];
+  if(!msgs.length){
+    box.innerHTML = `<div class="tglabel">Telegram-Nachrichten</div>
+      <div class="tg empty">Keine Treffer – der Lauf würde nichts schicken.</div>`;
+    return;
+  }
+  const over = j.count > j.max_messages;
+  box.innerHTML = `<div class="tglabel">So sähen die Telegram-Nachrichten aus
+      — <b>${msgs.length}</b> Stück, eine pro Slot${over
+        ? `, die letzte fasst die ${j.count - j.max_messages} über dem Limit von
+           ${j.max_messages} zusammen` : ""}
+      <span>· gebaut mit derselben Funktion wie im Produktivlauf; dort erscheinen nur
+      Slots, die seit dem letzten Lauf neu frei geworden sind</span></div>
+    <div class="tgstack">${msgs.map(m=>`<div class="tg">${tgHtml(m)}</div>`).join("")}</div>`;
+}
+
+function renderTimelines(j){
+  const lo=j.day_open, hi=j.day_close, span=hi-lo;
+  const pct = x => ((x-lo)/span*100);
+  const out = document.createElement("div");
+  const seg = (cls,s,e,title="") =>
+    `<div class="seg ${cls}" style="left:${pct(s)}%;width:${(e-s)/span*100}%"`
+    + (title ? ` title="${title}"` : "") + `></div>`;
+  const hhmm = x => String(Math.floor(x/60)).padStart(2,"0")+":"+String(x%60).padStart(2,"0");
+
+  j.courts.forEach(c=>{
+    const free = (c.free||[]).map(([s,e])=>seg("free",s,e)).join("");
+    const busy = c.occupied.map(([s,e])=>seg("busy",s,e)).join("");
+    const hits = (c.hits||[]).map(([s,e])=>
+      seg("hit",s,e,`buchbar ${hhmm(s)}–${hhmm(e)}`)).join("");
+    const win = `<div class="win" style="left:${pct(j.win[0])}%;width:${(j.win[1]-j.win[0])/span*100}%"></div>`;
+    // Beschriftung: buchbare Fenster statt einer langen Startzeiten-Liste
+    const mtxt = (c.hits||[]).length
+      ? (c.hits.map(([s,e])=>`${hhmm(s)}–${hhmm(e)}`).join(", ")
+         + (c.matches.length > c.hits.length ? ` · ${c.matches.length} Starts` : ""))
+      : "—";
+    const row = document.createElement("div"); row.className="court";
+    row.innerHTML = `<div class="name"><span>${c.name}</span><span class="m">${mtxt}</span></div>
+      <div class="track" style="--hourw:${6000/span}%">${free}${busy}${hits}${win}</div>`;
+    out.appendChild(row);
+  });
+  // Achse: bei langen Spannen (24/7) nur jede zweite Stunde beschriften
+  const axis = document.createElement("div"); axis.className="axis";
+  const step = span > 16*60 ? 2 : 1;
+  for(let h=Math.ceil(lo/60); h<=Math.floor(hi/60); h+=step){
+    const s=document.createElement("span"); s.style.left=pct(h*60)+"%"; s.textContent=String(h).padStart(2,"0");
+    axis.appendChild(s);
+  }
+  out.appendChild(axis);
+  $("#pvResult").appendChild(out);
+}
+
+boot();
+</script>
+</body>
+</html>
