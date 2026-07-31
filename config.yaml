@@ -1,5 +1,5 @@
 day_close: '24:00'
-day_open: '00:00'
+day_open: 00:00
 days_ahead: 14
 id_cuadro: '4'
 max_messages: 10
@@ -22,3 +22,18 @@ rules:
   weekdays:
   - Sa
   - So
+- name: Nachmittags
+  weekdays:
+  - Mo
+  - Di
+  - Mi
+  - Do
+  time_from: '16:00'
+  time_to: '22:00'
+  duration: 90
+  courts:
+  - '16'
+  - '17'
+  - '13'
+  - '14'
+  - '15'

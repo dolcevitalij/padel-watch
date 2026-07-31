@@ -33,7 +33,37 @@ from padel_watch import build_messages, order_slots, resolve_booking_links
 app = Flask(__name__)
 # neben webapp.py, nicht relativ zum Arbeitsverzeichnis - damit die UI auch
 # startet, wenn sie aus einem anderen Ordner heraus aufgerufen wird
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
+ENV_PATH = os.path.join(BASE_DIR, ".env")
+
+
+def load_env(path: str = ENV_PATH) -> None:
+    """
+    Minimaler .env-Loader (kein python-dotenv noetig): je Zeile KEY=WERT,
+    '#' ist Kommentar. Schon gesetzte Umgebungsvariablen gewinnen, man kann also
+    beim Start weiterhin ueberschreiben.
+
+    Zweck: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID / KEY_OVERRIDE muessen nicht
+    vor jedem Start in die Shell exportiert werden. Die Datei steht in
+    .gitignore - Tokens gehoeren nicht ins Repo, im Produktivlauf kommen sie
+    aus den GitHub Secrets.
+    """
+    if not os.path.exists(path):
+        return
+    # utf-8-sig: schluckt eine BOM, die PowerShell und Notepad beim Speichern
+    # voranstellen - sonst heisst der erste Schluessel '﻿TELEGRAM_BOT_TOKEN'
+    # und wird stillschweigend ignoriert.
+    with open(path, encoding="utf-8-sig") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+
+
+load_env()
 
 # Bekannte Courts (aus den Live-Daten). Wird per "Verbindung testen" aktualisiert.
 KNOWN_COURTS = [

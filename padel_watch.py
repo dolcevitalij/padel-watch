@@ -258,6 +258,7 @@ def build_slot_message(m: dict, id_cuadro: str) -> str:
         link = (f"🔗 <a href=\"{booking_url(id_cuadro)}\">Buchungsplan öffnen</a> "
                 f"— dort das Datum {d.strftime('%d.%m.')} im Kalender wählen")
     return (
+        f"ALAAARRRM ALAAARRRM\n"
         f"🎾 <b>{m['court_name']}</b> frei\n"
         f"📅 {WEEKDAYS[d.weekday()]} {d.strftime('%d.%m.%Y')} · "
         f"<b>{m['start']}–{end}</b> ({m['dur']} Min)\n"
