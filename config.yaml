@@ -53,9 +53,3 @@ rules:
   time_to: 06:00
   weekdays:
   - Mo
-  - Di
-  - Mi
-  - Do
-  - Fr
-  - Sa
-  - So
