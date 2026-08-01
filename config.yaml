@@ -4,8 +4,6 @@ days_ahead: 7
 id_cuadro: '4'
 max_messages: 10
 notify_on_error: true
-token_expires: '2026-10-30'
-token_warn_days: 7
 rules:
 - courts:
   - '16'
@@ -14,8 +12,8 @@ rules:
   - '14'
   - '15'
   duration: 90
-  name: Wochenende vormittags
-  time_from: 08:00
+  name: Sa-So Vormittags
+  time_from: 09:00
   time_to: '15:00'
   weekdays:
   - Sa
@@ -27,7 +25,7 @@ rules:
   - '14'
   - '15'
   duration: 90
-  name: Nachmittags
+  name: Mo-Do Nachmittags
   time_from: '16:00'
   time_to: '22:00'
   weekdays:
@@ -42,16 +40,18 @@ rules:
   - '14'
   - '15'
   duration: 60
-  name: Freitag
+  name: Fr Training
   time_from: '14:00'
-  time_to: '22:00'
+  time_to: '18:00'
   weekdays:
   - Fr
 - courts: []
   duration: 90
-  enabled: true
+  enabled: false
   name: Test
   time_from: 04:00
   time_to: 06:00
   weekdays:
   - Mo
+token_expires: '2026-10-30'
+token_warn_days: 7
