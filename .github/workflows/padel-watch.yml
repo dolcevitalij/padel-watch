@@ -2,7 +2,10 @@ name: Padel-Watch
 
 on:
   schedule:
-    - cron: "*/10 * * * *"     # alle 10 Minuten (GitHub-Minimum ist 5 Min)
+    # Alle 10 Minuten, aber auf krummen Minuten statt */10. Zur vollen Stunde und
+    # zu :10/:20/... ist die Warteschlange der kostenlosen Runner am laengsten;
+    # GitHub verzoegert geplante Laeufe dann stark oder verwirft sie ganz.
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:            # erlaubt manuelles Ausloesen zum Testen
 
 # Der Job darf state.json ins Repo zurueckschreiben
