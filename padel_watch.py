@@ -78,8 +78,14 @@ def target_dates(cfg: dict) -> list[dt.date]:
 
 
 def rules_for_weekday(cfg: dict, d: dt.date) -> list[dict]:
+    """
+    Regeln, die an diesem Wochentag greifen. Pausierte Regeln (enabled: false)
+    bleiben in config.yaml erhalten, melden aber nichts - fehlt das Feld, gilt
+    die Regel als aktiv, damit aeltere Konfigurationen unveraendert laufen.
+    """
     wd = WEEKDAYS[d.weekday()]
-    return [r for r in cfg["rules"] if wd in r["weekdays"]]
+    return [r for r in cfg["rules"]
+            if wd in r["weekdays"] and r.get("enabled", True)]
 
 
 # ------------------------------------------------------------------ #

@@ -45,7 +45,12 @@ rules:
   time_to: '22:00'
   weekdays:
   - Fr
-- name: Test
+- courts: []
+  duration: 90
+  enabled: true
+  name: Test
+  time_from: 08:00
+  time_to: '10:00'
   weekdays:
   - Mo
   - Di
@@ -54,7 +59,3 @@ rules:
   - Fr
   - Sa
   - So
-  time_from: 08:00
-  time_to: '10:00'
-  duration: 90
-  courts: []
