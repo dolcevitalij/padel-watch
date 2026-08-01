@@ -338,6 +338,15 @@ Body: {"ref":"main"}
 → Erfolg = HTTP 204 (ohne Inhalt)
 ```
 
+**cron-job.org funktioniert dafür nicht.** URL, Header, Body und Token waren korrekt
+(mit demselben Token lieferten Lese-Aufrufe HTTP 200), aber jeder Aufruf endete nach
+30 s im Timeout — im Timing-Diagramm die volle Zeit in der Phase „Empfangen". GitHub
+antwortet auf `/dispatches` mit **204 No Content**; deren HTTP-Client wartet auf einen
+Antwortkörper, der nie kommt. Ein höheres Timeout hilft deshalb nicht.
+Ersatz: **Cloudflare Worker** mit Cron Trigger, Code und Einrichtung in
+`cron-worker.js`. Der liest die Antwort selbst aus und protokolliert alles ≠ 204 als
+Fehler, damit ein stiller Ausfall auffällt.
+
 **Token:** Fine-grained PAT, *nur* dieses Repo, *nur* `Actions: Read and write`.
 Der Schaden bei Verlust ist damit auf „kann Workflow-Läufe starten" begrenzt — kein
 Push, kein Zugriff auf andere Repos. Der Token liegt beim Cron-Dienst (Drittanbieter)
