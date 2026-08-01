@@ -135,6 +135,7 @@ nur noch Fallback, wenn kein Token zu holen war.
 | HTTP-Sessions | **eine Session pro Lauf** (`open_session`) | Grid.aspx wird einmal statt 15× geladen — spart Requests trotz der neuen Token-Abrufe |
 | Automatisierungstool (n8n/Zapier)? | **Nein** | überflüssige Schicht; die Logik ist maßgeschneiderter Code |
 | Doppel-Benachrichtigung vermeiden | **State-Diff** (`state.json`) | meldet nur *neu* freie Slots |
+| Zustand vs. Versand | **erst senden, dann `save_state()`** | scheitert Telegram, gelten die Slots weiter als ungemeldet und werden nachgeholt; Preis sind mögliche Doppel-Nachrichten statt verlorener Meldungen |
 | State-Persistenz in Actions | State wird **ins Repo zurückcommittet** | zuverlässiger als Actions-Cache |
 
 **Fairness/Robustheit:** 10-Min-Takt + 1 s Pause je Request; bei Abruf-Fehlern
@@ -254,6 +255,13 @@ Der Produktivlauf bleibt `padel_watch.py` unter GitHub Actions.
 
 ## 7. Konventionen / Leitplanken
 - **Keine Secrets im Code/Repo** — nur via GitHub Secrets bzw. lokale Umgebungsvariablen.
+- **Ausnahmen nie ungefiltert loggen:** immer `scrub(e)` benutzen. Die Actions-Logs
+  eines öffentlichen Repos sind für jeden lesbar, und Telegram-Fehler enthalten die
+  komplette URL samt Bot-Token. GitHub maskiert Secrets zwar selbst, das ist aber nur
+  die zweite Absicherung. Auch der Traceback in `__main__` läuft durch `scrub()`.
+- **Zustand erst nach erfolgreichem Versand schreiben** (siehe §3). Auf allen
+  Abbruchpfaden `keep_state(old_state, meta)` verwenden: Slots bleiben ungemeldet,
+  eine gesendete Ablaufwarnung wiederholt sich trotzdem nicht.
 - **Saubere Trennung:** Abruf (`fetch`), Logik (`core`), Orchestrierung
   (`padel_watch`), UI (`webapp`) bleiben entkoppelt.
 - Poll-Intervall **nicht** unter ~10 Min drücken (Fairness ggü. Club-Server).

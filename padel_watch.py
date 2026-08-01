@@ -38,6 +38,24 @@ WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 # ------------------------------------------------------------------ #
 #  Telegram
 # ------------------------------------------------------------------ #
+def scrub(value: object) -> str:
+    """
+    Bot-Token aus Log-Ausgaben entfernen.
+
+    Notwendig, weil die Actions-Logs eines oeffentlichen Repos fuer jeden lesbar
+    sind und Telegram-Fehler die komplette URL enthalten
+    (`api.telegram.org/bot<TOKEN>/sendMessage`). GitHub maskiert registrierte
+    Secrets automatisch mit ***, aber das ist eine zweite Absicherung und keine
+    Garantie - hier wird der Wert unabhaengig davon ersetzt.
+    """
+    s = str(value)
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if token:
+        s = s.replace(token, "<TELEGRAM_BOT_TOKEN>")
+    # Zusaetzlich nach Muster, falls der Token anders zusammengesetzt auftaucht
+    return re.sub(r"bot\d{6,}:[A-Za-z0-9_-]{20,}", "bot<TELEGRAM_BOT_TOKEN>", s)
+
+
 def send_telegram(text: str) -> None:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
@@ -62,6 +80,18 @@ def load_state() -> dict:
 
 def save_state(state: dict) -> None:
     json.dump(state, open(STATE_FILE, "w"), indent=0, sort_keys=True)
+
+
+def keep_state(old_state: dict, meta: dict) -> dict:
+    """
+    Alt-Zustand unveraendert weiterschreiben, nur den Merker aktualisieren.
+    Fuer alle Abbruchpfade: die Slots sollen weiter als ungemeldet gelten,
+    eine schon gesendete Ablaufwarnung sich aber nicht wiederholen.
+    """
+    out = dict(old_state)
+    if meta:
+        out["meta"] = meta
+    return out
 
 
 # ------------------------------------------------------------------ #
@@ -161,14 +191,14 @@ def run() -> int:
             meta["token_warned"] = today.isoformat()
             print("Token-Ablaufwarnung gesendet.")
         except Exception as e:
-            print(f"Token-Ablaufwarnung konnte nicht gesendet werden: {e}",
+            print(f"Token-Ablaufwarnung konnte nicht gesendet werden: {scrub(e)}",
                   file=sys.stderr)
 
     # Eine Session fuer den ganzen Lauf: Grid.aspx nur einmal laden statt pro Tag
     try:
         sess = open_session(cfg["id_cuadro"], key_override)
     except Exception as e:
-        msg = f"⚠️ Padel-Watch: Verbindungsaufbau fehlgeschlagen: {e}"
+        msg = f"⚠️ Padel-Watch: Verbindungsaufbau fehlgeschlagen: {scrub(e)}"
         print(msg, file=sys.stderr)
         if cfg.get("notify_on_error"):
             try:
@@ -177,7 +207,7 @@ def run() -> int:
                 pass
         # Slot-Zustand unveraendert lassen, aber den Warn-Merker sichern -
         # sonst kaeme die Ablaufwarnung beim naechsten Lauf erneut
-        save_state({**old_state, "meta": meta})
+        save_state(keep_state(old_state, meta))
         return 1
 
     for d in target_dates(cfg):
@@ -189,7 +219,7 @@ def run() -> int:
         try:
             payload = fetch_grid(cfg["id_cuadro"], fecha, key_override, session=sess)
         except Exception as e:
-            msg = f"⚠️ Padel-Watch: Abruf fuer {fecha} fehlgeschlagen: {e}"
+            msg = f"⚠️ Padel-Watch: Abruf fuer {fecha} fehlgeschlagen: {scrub(e)}"
             print(msg, file=sys.stderr)
             if cfg.get("notify_on_error"):
                 try:
@@ -198,7 +228,7 @@ def run() -> int:
                     pass
             # abbrechen: Diff nicht auf Basis kaputter Daten schreiben,
             # aber den Warn-Merker behalten
-            save_state({**old_state, "meta": meta})
+            save_state(keep_state(old_state, meta))
             return 1
 
         day_key = d.isoformat()
@@ -231,10 +261,10 @@ def run() -> int:
 
         time.sleep(1.0)     # fair gegenueber dem Club-Server
 
-    if meta:
-        new_state["meta"] = meta
-    save_state(new_state)
-
+    # Versand VOR dem Schreiben des Zustands: sonst gelten Slots als gemeldet,
+    # obwohl die Nachricht nie ankam - und der Persist-Schritt committet das mit
+    # `if: always()`, die Meldung waere dauerhaft verloren.
+    sent = 0
     if fresh:
         limit = int(cfg.get("max_messages", 10))
         ordered = order_slots(fresh)
@@ -244,10 +274,26 @@ def run() -> int:
         for i, text in enumerate(msgs):
             if i:
                 time.sleep(0.4)     # Telegram nicht mit einem Burst bewerfen
-            send_telegram(text)
-        print(f"{len(fresh)} neue freie Slots in {len(msgs)} Nachricht(en) gemeldet.")
+            try:
+                send_telegram(text)
+                sent += 1
+            except Exception as e:
+                print(f"Telegram-Versand fehlgeschlagen bei Nachricht "
+                      f"{i + 1}/{len(msgs)}: {scrub(e)}", file=sys.stderr)
+                # Zustand NICHT fortschreiben, damit der naechste Lauf die
+                # Slots erneut meldet. Preis: bereits gesendete Nachrichten
+                # kommen dann doppelt - besser als verlorene Meldungen.
+                save_state(keep_state(old_state, meta))
+                print(f"Zustand nicht fortgeschrieben, {len(fresh)} Slots werden "
+                      f"beim naechsten Lauf erneut gemeldet.", file=sys.stderr)
+                return 1
+        print(f"{len(fresh)} neue freie Slots in {sent} Nachricht(en) gemeldet.")
     else:
         print("Keine neuen freien Slots.")
+
+    if meta:
+        new_state["meta"] = meta
+    save_state(new_state)
     return 0
 
 
@@ -322,7 +368,7 @@ def resolve_booking_links(slots: list[dict], id_cuadro: str,
                       file=sys.stderr)
         except Exception as e:
             print(f"Buchungs-Link fuer {m['court_name']} {m['start']} "
-                  f"nicht ermittelbar: {e}", file=sys.stderr)
+                  f"nicht ermittelbar: {scrub(e)}", file=sys.stderr)
             m["book_url"] = None
 
 
@@ -385,4 +431,11 @@ def build_message(fresh: list[dict], id_cuadro: str,
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    try:
+        sys.exit(run())
+    except Exception:
+        # Traceback erhalten, aber gefiltert: er kann die Telegram-URL samt
+        # Token enthalten, und Actions-Logs sind bei oeffentlichen Repos oeffentlich.
+        import traceback
+        print(scrub(traceback.format_exc()), file=sys.stderr)
+        sys.exit(1)
