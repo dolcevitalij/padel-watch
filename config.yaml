@@ -54,4 +54,4 @@ rules:
   weekdays:
   - Mo
 token_expires: '2026-10-30'
-token_warn_days: 7
+token_warn_days: 14
