@@ -47,6 +47,12 @@ rules:
   - Fr
 - name: Test
   weekdays:
+  - Mo
+  - Di
+  - Mi
+  - Do
+  - Fr
+  - Sa
   - So
   time_from: 08:00
   time_to: '10:00'
