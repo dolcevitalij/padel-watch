@@ -338,14 +338,21 @@ Body: {"ref":"main"}
 → Erfolg = HTTP 204 (ohne Inhalt)
 ```
 
-**cron-job.org funktioniert dafür nicht.** URL, Header, Body und Token waren korrekt
-(mit demselben Token lieferten Lese-Aufrufe HTTP 200), aber jeder Aufruf endete nach
-30 s im Timeout — im Timing-Diagramm die volle Zeit in der Phase „Empfangen". GitHub
-antwortet auf `/dispatches` mit **204 No Content**; deren HTTP-Client wartet auf einen
-Antwortkörper, der nie kommt. Ein höheres Timeout hilft deshalb nicht.
-Ersatz: **Cloudflare Worker** mit Cron Trigger, Code und Einrichtung in
-`cron-worker.js`. Der liest die Antwort selbst aus und protokolliert alles ≠ 204 als
-Fehler, damit ein stiller Ausfall auffällt.
+**cron-job.org läuft, aber unzuverlässig.** URL, Header, Body und Token sind korrekt
+(Lese-Aufrufe mit demselben Token: HTTP 200). Am 01.08. schlug der Aufruf um 11:20 UTC
+nach 30 s mit Timeout fehl — im Timing-Diagramm die volle Zeit in der Phase
+„Empfangen", kein Lauf wurde erzeugt; der um 11:30 UTC lief dagegen durch und hat
+Telegram-Nachrichten ausgelöst. Vermutung: deren HTTP-Client kommt mit GitHubs
+inhaltsloser Antwort (**204 No Content**) nicht immer klar, oder die geteilten
+IP-Adressen werden gebremst. Ein höheres Timeout hilft dagegen nicht.
+
+**Ein ausgefallener Aufruf kostet keine Meldung**, nur Zeit: der `state.json`-Diff
+vergleicht gegen den letzten *erfolgreichen* Lauf, ein übersprungener Slot wird also
+beim nächsten Lauf gemeldet. Erst wenn Ausfälle gehäuft auftreten, wird es störend.
+
+Vorbereiteter Ersatz, falls es so weit kommt: **Cloudflare Worker** mit Cron Trigger,
+Code und Einrichtung in `cron-worker.js`. Der ist selbst der HTTP-Client, liest die
+204 korrekt und protokolliert alles ≠ 204 als Fehler.
 
 **Token:** Fine-grained PAT, *nur* dieses Repo, *nur* `Actions: Read and write`.
 Der Schaden bei Verlust ist damit auf „kann Workflow-Läufe starten" begrenzt — kein
