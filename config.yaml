@@ -13,8 +13,8 @@ rules:
   - '15'
   duration: 90
   name: Wochenende vormittags
-  time_from: 09:00
-  time_to: '13:00'
+  time_from: 08:00
+  time_to: '15:00'
   weekdays:
   - Sa
   - So
@@ -39,7 +39,7 @@ rules:
   - '13'
   - '14'
   - '15'
-  duration: 90
+  duration: 60
   name: Freitag
   time_from: '14:00'
   time_to: '22:00'
@@ -49,8 +49,8 @@ rules:
   duration: 90
   enabled: true
   name: Test
-  time_from: 06:00
-  time_to: 08:00
+  time_from: 04:00
+  time_to: 06:00
   weekdays:
   - Mo
   - Di
