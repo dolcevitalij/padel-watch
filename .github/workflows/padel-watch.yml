@@ -1,12 +1,14 @@
 name: Padel-Watch
 
 on:
+  # Den 10-Minuten-Takt loest ein externer Cron-Dienst per workflow_dispatch aus
+  # (siehe HANDOFF.md §9). Grund: GitHubs eigener Scheduler hat fuer dieses Repo
+  # ueber Stunden keinen einzigen Lauf gestartet - geplante Laeufe sind auf den
+  # kostenlosen Runnern nur "best effort" und werden bei Last verworfen.
   schedule:
-    # Alle 10 Minuten, aber auf krummen Minuten statt */10. Zur vollen Stunde und
-    # zu :10/:20/... ist die Warteschlange der kostenlosen Runner am laengsten;
-    # GitHub verzoegert geplante Laeufe dann stark oder verwirft sie ganz.
-    - cron: "3,13,23,33,43,53 * * * *"
-  workflow_dispatch:            # erlaubt manuelles Ausloesen zum Testen
+    # Nur noch Notnetz: einmal pro Stunde, falls der externe Dienst ausfaellt.
+    - cron: "7 * * * *"
+  workflow_dispatch:            # externer Auslöser + manuelles Testen
 
 # Der Job darf state.json ins Repo zurueckschreiben
 permissions:

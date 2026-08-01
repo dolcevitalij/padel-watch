@@ -128,7 +128,7 @@ nur noch Fallback, wenn kein Token zu holen war.
 
 | Frage | Entscheidung | Begründung |
 |---|---|---|
-| Ausführung ohne eigenen Rechner | **GitHub Actions** (Cron, alle 10 Min) | kostenlos, kein Server, Scheduler eingebaut |
+| Ausführung ohne eigenen Rechner | **GitHub Actions**, angestoßen von einem **externen Cron-Dienst** (alle 10 Min) | kostenlos, kein Server; GitHubs eigener Scheduler löste nie aus, siehe §9 |
 | Benachrichtigung | **Telegram-Bot** (direkter `sendMessage`-Call) | kein App-Store/Dev-Account, echter Push |
 | Nachrichten-Zuschnitt | **eine Nachricht pro Slot**, chronologisch, 0,4 s Pause dazwischen | jede Meldung ist einzeln abtippbar/teilbar; Sammel-Nachricht erst über `max_messages` (Default 10), damit der erste Lauf mit leerem `state.json` nicht flutet |
 | Link in der Nachricht | **direkter Slot-Link** über einen frisch geholten Token (§2) | ein Tap führt in den Buchungsdialog dieses Slots; Fallback ist der Plan-Link |
@@ -295,3 +295,52 @@ winget install --id Python.Python.3.13 --source winget --scope user
 Vorhanden ist außerdem `git 2.55`; **nicht** vorhanden: `gh`, `node`, `uv`, `pipx`.
 `CONFIG_PATH` in `webapp.py` liegt bewusst neben der Datei (nicht relativ zum
 Arbeitsverzeichnis), damit der Start über `.claude/launch.json` von außerhalb klappt.
+
+**Komfort-Skripte** (Doppelklick, liegen im Repo):
+
+| Datei | Zweck |
+|---|---|
+| `start-webapp.bat` | Testkonsole starten → http://localhost:5000 |
+| `publish-config.bat` | `config.yaml` committen + pushen, falls geändert |
+| `trigger-run.bat` | Workflow per API auslösen (braucht `GITHUB_TOKEN` in `.env`) |
+
+---
+
+## 9. Warum ein externer Cron-Dienst (Stand 01.08.2026)
+
+**GitHubs eigener Scheduler hat für dieses Repo nie ausgelöst.** Befund nach dem
+ersten manuellen Lauf (09:10 UTC): über 1,5 Stunden **null** geplante Läufe, obwohl
+bei `*/10` rund neun fällig gewesen wären. Ausgeschlossen wurde:
+
+- Workflow-Status ist `active` (API `/actions/workflows`), kein Deaktivierungsbanner in der UI
+- Repo ist **öffentlich** → unbegrenzte Actions-Minuten, kein Kontingentproblem
+- Default-Branch ist `main`, dort liegt die Workflow-Datei (Cron läuft nur dort)
+- `workflow_dispatch` funktioniert → die `on:`-Sektion wird korrekt geparst
+- Versatz auf krumme Minuten (`3,13,23,...`) brachte ebenfalls nichts
+
+Geplante Läufe sind auf den kostenlosen Runnern laut GitHub ausdrücklich *best effort*:
+sie werden verzögert und bei Last **verworfen**. Für „melde mir freie Plätze zeitnah"
+ist das unbrauchbar.
+
+**Lösung:** ein externer Cron-Dienst ruft alle 10 Minuten die
+`workflow_dispatch`-API auf. Der GitHub-Zeitplan bleibt als **stündliches Notnetz**
+(`cron: "7 * * * *"`) — so gibt es keine doppelten Läufe, falls GitHubs Scheduler
+später doch anspringt, und der Ausfall des externen Dienstes bleibt nicht unbemerkt.
+
+Aufruf (identisch in `trigger-run.ps1`):
+
+```
+POST https://api.github.com/repos/dolcevitalij/padel-watch/actions/workflows/padel-watch.yml/dispatches
+Accept: application/vnd.github+json
+Authorization: Bearer <PAT>
+X-GitHub-Api-Version: 2022-11-28
+Body: {"ref":"main"}
+→ Erfolg = HTTP 204 (ohne Inhalt)
+```
+
+**Token:** Fine-grained PAT, *nur* dieses Repo, *nur* `Actions: Read and write`.
+Der Schaden bei Verlust ist damit auf „kann Workflow-Läufe starten" begrenzt — kein
+Push, kein Zugriff auf andere Repos. Der Token liegt beim Cron-Dienst (Drittanbieter)
+und lokal in `.env`; **nicht** in den GitHub Secrets, die braucht nur der Lauf selbst.
+Fine-grained Tokens laufen ab — Ablaufdatum notieren, sonst steht der Cron irgendwann
+still (`trigger-run.bat` zeigt dann HTTP 401).
