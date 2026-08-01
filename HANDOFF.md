@@ -358,5 +358,15 @@ Code und Einrichtung in `cron-worker.js`. Der ist selbst der HTTP-Client, liest 
 Der Schaden bei Verlust ist damit auf „kann Workflow-Läufe starten" begrenzt — kein
 Push, kein Zugriff auf andere Repos. Der Token liegt beim Cron-Dienst (Drittanbieter)
 und lokal in `.env`; **nicht** in den GitHub Secrets, die braucht nur der Lauf selbst.
-Fine-grained Tokens laufen ab — Ablaufdatum notieren, sonst steht der Cron irgendwann
-still (`trigger-run.bat` zeigt dann HTTP 401).
+Fine-grained Tokens laufen ab. Dagegen warnt der Lauf inzwischen selbst:
+`check_token_expiry()` schickt ab `token_warn_days` (Standard 7) vor `token_expires`
+**einmal täglich** eine Telegram-Warnung. Der Merker dafür steht in `state.json` unter
+dem Sonderschlüssel `meta.token_warned` — ohne ihn käme die Warnung bei jedem der ~144
+Läufe pro Tag. Er wird auch auf den Fehlerpfaden gesichert, damit ein gescheiterter
+Abruf die Warnung nicht wiederholen lässt.
+
+Beides ist in der Konsole einstellbar („Token läuft ab", „Vorwarnung (Tage)").
+Leeres Datum = keine Warnung. Nach jeder Token-Erneuerung Datum aktualisieren.
+
+Der Prüfaufruf steht **vor** dem Abruf, damit die Warnung auch rausgeht, wenn der
+Club-Server gerade nicht erreichbar ist.

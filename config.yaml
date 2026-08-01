@@ -4,6 +4,8 @@ days_ahead: 7
 id_cuadro: '4'
 max_messages: 10
 notify_on_error: true
+token_expires: '2026-10-30'
+token_warn_days: 7
 rules:
 - courts:
   - '16'

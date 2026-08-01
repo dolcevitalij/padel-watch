@@ -169,6 +169,12 @@
       <div><label title="Darüber hinaus fasst der Lauf zu einer Sammel-Nachricht zusammen">Max. Einzelnachrichten</label>
         <input id="max_messages" type="number" min="1" max="50"></div>
     </div>
+    <div class="row" style="margin-top:12px">
+      <div><label title="Ablaufdatum des Cron-Tokens – danach löst niemand mehr Läufe aus">Token läuft ab</label>
+        <input id="token_expires" type="date"></div>
+      <div><label title="So viele Tage vorher kommt täglich eine Telegram-Warnung">Vorwarnung (Tage)</label>
+        <input id="token_warn_days" type="number" min="1" max="60"></div>
+    </div>
     <div style="margin-top:14px">
       <label><input type="checkbox" id="notify_on_error" style="width:auto;margin-right:8px">
         Bei Abruf-Fehlern eine Telegram-Warnung senden</label>
@@ -255,6 +261,8 @@ async function boot(){
   $("#day_open").value = cfg.day_open;
   $("#day_close").value = cfg.day_close;
   $("#max_messages").value = cfg.max_messages ?? 10;
+  $("#token_expires").value = cfg.token_expires ?? "";
+  $("#token_warn_days").value = cfg.token_warn_days ?? 7;
   $("#notify_on_error").checked = !!cfg.notify_on_error;
   renderRules();
   renderCourtPicker();
@@ -447,6 +455,8 @@ function cfgSnapshot(){
     day_open: $("#day_open").value,
     day_close: $("#day_close").value,
     max_messages: parseInt($("#max_messages").value),
+    token_expires: $("#token_expires").value,
+    token_warn_days: parseInt($("#token_warn_days").value),
     rules: cfg && cfg.rules || [],
     notify_on_error: $("#notify_on_error").checked,
   });
@@ -476,6 +486,10 @@ function validateConfig(d){
     errs.push("Anlage öffnet muss vor Anlage schließt liegen.");
   if(!Number.isInteger(d.max_messages) || d.max_messages < 1 || d.max_messages > 50)
     errs.push("Max. Einzelnachrichten muss zwischen 1 und 50 liegen.");
+  if(d.token_expires && !/^\d{4}-\d{2}-\d{2}$/.test(d.token_expires))
+    errs.push("Token läuft ab: Datum muss JJJJ-MM-TT sein (Feld leer = keine Warnung).");
+  if(!Number.isInteger(d.token_warn_days) || d.token_warn_days < 1 || d.token_warn_days > 60)
+    errs.push("Vorwarnung muss zwischen 1 und 60 Tagen liegen.");
   // Pausierte Regeln nicht pruefen: sie koennen nichts kaputtmachen, solange sie
   // pausiert sind, und man will eine halbfertige Regel zwischenspeichern koennen.
   (d.rules||[]).filter(isEnabled).forEach((r,i)=>{
@@ -498,6 +512,8 @@ async function saveConfig(){
     day_open: $("#day_open").value.trim(),
     day_close: $("#day_close").value.trim(),
     max_messages: parseInt($("#max_messages").value),
+    token_expires: $("#token_expires").value,
+    token_warn_days: parseInt($("#token_warn_days").value),
     notify_on_error: $("#notify_on_error").checked,
   };
   const errs = validateConfig(draft);

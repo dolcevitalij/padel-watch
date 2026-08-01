@@ -77,6 +77,54 @@ def target_dates(cfg: dict) -> list[dt.date]:
     return [today + dt.timedelta(days=i) for i in range(cfg["days_ahead"] + 1)]
 
 
+def check_token_expiry(cfg: dict, state: dict) -> str | None:
+    """
+    Warnt, wenn der PAT des externen Cron-Ausloesers bald ablaeuft.
+
+    Notwendig, weil dieser Ausfall sonst voellig lautlos ist: laeuft der Token ab,
+    startet kein Lauf mehr - und `notify_on_error` greift nur bei Fehlern INNERHALB
+    eines Laufs. Kein Lauf heisst also auch keine Fehlermeldung.
+
+    Gibt den Nachrichtentext zurueck oder None. Sendet hoechstens einmal pro Tag
+    (Merker in state.json), sonst kaeme die Warnung bei jedem Lauf.
+    """
+    raw = cfg.get("token_expires")
+    if not raw:
+        return None
+    try:
+        expires = dt.date.fromisoformat(str(raw))
+    except ValueError:
+        print(f"token_expires ist kein Datum (JJJJ-MM-TT): {raw!r}", file=sys.stderr)
+        return None
+
+    today = dt.date.today()
+    days = (expires - today).days
+    if days > int(cfg.get("token_warn_days", 7)):
+        return None
+    if state.get("meta", {}).get("token_warned") == today.isoformat():
+        return None                     # heute schon gewarnt
+
+    # Kein <b> innerhalb von <b> - Telegram lehnt verschachtelte Tags ab (HTTP 400)
+    if days < 0:
+        wann = f"ist seit {abs(days)} Tag(en) abgelaufen"
+    elif days == 0:
+        wann = "läuft HEUTE ab"
+    else:
+        wann = f"läuft in {days} Tag(en) ab"
+
+    return (
+        f"⏳ <b>Padel-Watch: Zugangs-Token {wann}</b>\n"
+        f"Ablaufdatum: {expires:%d.%m.%Y}\n\n"
+        "Danach löst der externe Cron-Dienst keine Läufe mehr aus — und zwar "
+        "ohne weitere Fehlermeldung, weil dann gar nichts mehr läuft.\n\n"
+        "Zu tun:\n"
+        "1. Neuen Fine-grained Token auf GitHub erzeugen "
+        "(nur dieses Repo, Actions: Read and write)\n"
+        "2. Beim Cron-Dienst im Authorization-Header eintragen\n"
+        "3. <code>token_expires</code> in config.yaml auf das neue Datum setzen"
+    )
+
+
 def rules_for_weekday(cfg: dict, d: dt.date) -> list[dict]:
     """
     Regeln, die an diesem Wochentag greifen. Pausierte Regeln (enabled: false)
@@ -96,9 +144,25 @@ def run() -> int:
     key_override = os.environ.get("KEY_OVERRIDE") or None
 
     old_state = load_state()
-    new_state: dict[str, list[str]] = {}
+    # Datum -> Slot-Ids, plus der Sonderschluessel "meta" fuer Merker
+    new_state: dict[str, object] = {}
     fresh: list[dict] = []          # neu aufgetauchte Treffer
     today = dt.date.today()
+
+    # Merker aus dem alten Zustand uebernehmen, sonst geht er jeden Lauf verloren
+    meta = dict(old_state.get("meta", {}))
+
+    # Vor dem Abruf: eine ablaufende Berechtigung ist wichtiger als die Slots,
+    # und die Warnung soll auch rausgehen, wenn der Abruf gleich scheitert.
+    warning = check_token_expiry(cfg, old_state)
+    if warning:
+        try:
+            send_telegram(warning)
+            meta["token_warned"] = today.isoformat()
+            print("Token-Ablaufwarnung gesendet.")
+        except Exception as e:
+            print(f"Token-Ablaufwarnung konnte nicht gesendet werden: {e}",
+                  file=sys.stderr)
 
     # Eine Session fuer den ganzen Lauf: Grid.aspx nur einmal laden statt pro Tag
     try:
@@ -111,6 +175,9 @@ def run() -> int:
                 send_telegram(msg)
             except Exception:
                 pass
+        # Slot-Zustand unveraendert lassen, aber den Warn-Merker sichern -
+        # sonst kaeme die Ablaufwarnung beim naechsten Lauf erneut
+        save_state({**old_state, "meta": meta})
         return 1
 
     for d in target_dates(cfg):
@@ -129,7 +196,10 @@ def run() -> int:
                     send_telegram(msg)
                 except Exception:
                     pass
-            return 1        # abbrechen: Diff nicht auf Basis kaputter Daten schreiben
+            # abbrechen: Diff nicht auf Basis kaputter Daten schreiben,
+            # aber den Warn-Merker behalten
+            save_state({**old_state, "meta": meta})
+            return 1
 
         day_key = d.isoformat()
         seen_today: list[str] = []
@@ -161,6 +231,8 @@ def run() -> int:
 
         time.sleep(1.0)     # fair gegenueber dem Club-Server
 
+    if meta:
+        new_state["meta"] = meta
     save_state(new_state)
 
     if fresh:
