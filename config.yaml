@@ -49,8 +49,8 @@ rules:
   duration: 90
   enabled: true
   name: Test
-  time_from: 08:00
-  time_to: '10:00'
+  time_from: 06:00
+  time_to: 08:00
   weekdays:
   - Mo
   - Di
