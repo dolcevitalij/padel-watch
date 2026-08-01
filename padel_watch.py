@@ -56,16 +56,59 @@ def scrub(value: object) -> str:
     return re.sub(r"bot\d{6,}:[A-Za-z0-9_-]{20,}", "bot<TELEGRAM_BOT_TOKEN>", s)
 
 
-def send_telegram(text: str) -> None:
-    token = os.environ["TELEGRAM_BOT_TOKEN"]
-    chat_id = os.environ["TELEGRAM_CHAT_ID"]
-    resp = requests.post(
+# Wird eine Telegram-Gruppe zur Supergruppe hochgestuft, aendert sich ihre Id
+# (aus -123... wird -100123...). Telegram liefert die neue Id in der Fehlerantwort
+# mit, wir uebernehmen sie sofort und merken sie in state.json - sonst waere der
+# Versand ab diesem Moment tot, und die Fehlermeldung ginge an dieselbe kaputte Id.
+CHAT_ID_OVERRIDE: str | None = None
+LAST_MIGRATION: str | None = None
+
+
+def apply_chat_override(state: dict | None = None) -> None:
+    """Bereits migrierte Chat-Id aus state.json uebernehmen."""
+    global CHAT_ID_OVERRIDE
+    st = state if state is not None else load_state()
+    CHAT_ID_OVERRIDE = st.get("meta", {}).get("chat_id") or None
+
+
+def target_chat_id() -> str:
+    return CHAT_ID_OVERRIDE or os.environ["TELEGRAM_CHAT_ID"]
+
+
+def _post_telegram(token: str, chat_id: str, text: str):
+    return requests.post(
         f"https://api.telegram.org/bot{token}/sendMessage",
         json={"chat_id": chat_id, "text": text,
               "parse_mode": "HTML", "disable_web_page_preview": True},
         timeout=20,
     )
-    resp.raise_for_status()
+
+
+def send_telegram(text: str) -> None:
+    global CHAT_ID_OVERRIDE, LAST_MIGRATION
+    token = os.environ["TELEGRAM_BOT_TOKEN"]
+    chat_id = target_chat_id()
+
+    resp = _post_telegram(token, chat_id, text)
+    if resp.ok:
+        return
+
+    new_id = None
+    try:
+        new_id = resp.json().get("parameters", {}).get("migrate_to_chat_id")
+    except Exception:
+        pass
+
+    if not new_id:
+        resp.raise_for_status()
+        return
+
+    # Gruppe wurde hochgestuft: neue Id uebernehmen und dieselbe Nachricht
+    # erneut schicken, damit dieser Lauf nichts verliert.
+    print(f"Chat-Id migriert: {chat_id} -> {new_id}", file=sys.stderr)
+    CHAT_ID_OVERRIDE = str(new_id)
+    LAST_MIGRATION = str(new_id)
+    _post_telegram(token, CHAT_ID_OVERRIDE, text).raise_for_status()
 
 
 # ------------------------------------------------------------------ #
@@ -181,6 +224,7 @@ def run() -> int:
 
     # Merker aus dem alten Zustand uebernehmen, sonst geht er jeden Lauf verloren
     meta = dict(old_state.get("meta", {}))
+    apply_chat_override(old_state)       # ggf. schon migrierte Gruppen-Id nutzen
 
     # Vor dem Abruf: eine ablaufende Berechtigung ist wichtiger als die Slots,
     # und die Warnung soll auch rausgehen, wenn der Abruf gleich scheitert.
@@ -290,6 +334,23 @@ def run() -> int:
         print(f"{len(fresh)} neue freie Slots in {sent} Nachricht(en) gemeldet.")
     else:
         print("Keine neuen freien Slots.")
+
+    # Migrierte Gruppen-Id sichern und einmal darauf hinweisen: state.json ist
+    # ein Repo-Artefakt und kann verloren gehen, das GitHub-Secret nicht.
+    if LAST_MIGRATION and meta.get("chat_id") != LAST_MIGRATION:
+        meta["chat_id"] = LAST_MIGRATION
+        try:
+            send_telegram(
+                "ℹ️ <b>Padel-Watch: Gruppen-Id hat sich geändert</b>\n"
+                f"Neue Id: <code>{LAST_MIGRATION}</code>\n\n"
+                "Telegram hat die Gruppe zur Supergruppe hochgestuft. Der Versand "
+                "läuft bereits über die neue Id — sie steht in state.json.\n\n"
+                "Bitte trotzdem das GitHub-Secret <code>TELEGRAM_CHAT_ID</code> "
+                "darauf ändern, sonst greift der alte Wert wieder, sobald "
+                "state.json neu angelegt wird."
+            )
+        except Exception as e:
+            print(f"Hinweis zur Migration nicht gesendet: {scrub(e)}", file=sys.stderr)
 
     if meta:
         new_state["meta"] = meta

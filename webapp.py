@@ -22,13 +22,14 @@ import os
 import datetime as dt
 
 import yaml
-import requests
 from flask import Flask, request, jsonify, render_template
 
 from core import parse_courts, find_matches, merge_intervals
 from fetch import fetch_grid, open_session
-# dieselbe Formatierung und Link-Ermittlung wie im Produktivlauf
-from padel_watch import build_messages, order_slots, resolve_booking_links
+# dieselbe Formatierung, Link-Ermittlung und Telegram-Anbindung wie im Produktivlauf
+from padel_watch import (apply_chat_override, build_messages, order_slots,
+                         resolve_booking_links, scrub, send_telegram,
+                         target_chat_id)
 
 app = Flask(__name__)
 # neben webapp.py, nicht relativ zum Arbeitsverzeichnis - damit die UI auch
@@ -240,21 +241,17 @@ def preview():
 
 @app.post("/api/test-telegram")
 def test_telegram():
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat = os.environ.get("TELEGRAM_CHAT_ID")
-    if not token or not chat:
+    if not os.environ.get("TELEGRAM_BOT_TOKEN") or not os.environ.get("TELEGRAM_CHAT_ID"):
         return jsonify({"ok": False,
                         "error": "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID nicht gesetzt."})
+    # send_telegram aus dem Produktivlauf: gleiche Fehlerbehandlung, gleiche
+    # Behandlung migrierter Gruppen-Ids, Token wird aus Meldungen gefiltert
+    apply_chat_override()
     try:
-        r = requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat,
-                  "text": "✅ Padel-Watch Test – Verbindung funktioniert."},
-            timeout=20)
-        r.raise_for_status()
-        return jsonify({"ok": True})
+        send_telegram("✅ Padel-Watch Test – Verbindung funktioniert.")
+        return jsonify({"ok": True, "chat_id": target_chat_id()})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+        return jsonify({"ok": False, "error": scrub(e)})
 
 
 if __name__ == "__main__":

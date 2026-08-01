@@ -130,6 +130,7 @@ nur noch Fallback, wenn kein Token zu holen war.
 |---|---|---|
 | Ausführung ohne eigenen Rechner | **GitHub Actions**, angestoßen von einem **externen Cron-Dienst** (alle 10 Min) | kostenlos, kein Server; GitHubs eigener Scheduler löste nie aus, siehe §9 |
 | Benachrichtigung | **Telegram-Bot** (direkter `sendMessage`-Call) | kein App-Store/Dev-Account, echter Push |
+| Empfänger | **Telegram-Gruppe** statt Einzelchat (`TELEGRAM_CHAT_ID` = negative Gruppen-Id) | Freunde mitnutzen lassen = in die Gruppe einladen, keine Codeänderung, keine Liste von Chat-Ids zu pflegen |
 | Nachrichten-Zuschnitt | **eine Nachricht pro Slot**, chronologisch, 0,4 s Pause dazwischen | jede Meldung ist einzeln abtippbar/teilbar; Sammel-Nachricht erst über `max_messages` (Default 10), damit der erste Lauf mit leerem `state.json` nicht flutet |
 | Link in der Nachricht | **direkter Slot-Link** über einen frisch geholten Token (§2) | ein Tap führt in den Buchungsdialog dieses Slots; Fallback ist der Plan-Link |
 | HTTP-Sessions | **eine Session pro Lauf** (`open_session`) | Grid.aspx wird einmal statt 15× geladen — spart Requests trotz der neuen Token-Abrufe |
@@ -262,6 +263,23 @@ Der Produktivlauf bleibt `padel_watch.py` unter GitHub Actions.
 - **Zustand erst nach erfolgreichem Versand schreiben** (siehe §3). Auf allen
   Abbruchpfaden `keep_state(old_state, meta)` verwenden: Slots bleiben ungemeldet,
   eine gesendete Ablaufwarnung wiederholt sich trotzdem nicht.
+- **Telegram nur über `padel_watch.send_telegram()`**, auch aus der Web-UI. Dort
+  hängen Token-Filterung und die Behandlung migrierter Gruppen-Ids dran; eine zweite
+  `requests.post`-Kopie würde beides umgehen.
+
+### Gruppen-Ids und Supergruppen
+Telegram stuft Gruppen automatisch zur Supergruppe hoch (mehr Mitglieder, öffentlich
+schalten). Dabei **ändert sich die Id** von `-123456789` zu `-100123456789`, und
+jeder Versand an die alte Id scheitert — inklusive der Fehlermeldung, die ja an
+dieselbe Adresse ginge. `send_telegram()` fängt das ab: Telegram liefert die neue Id
+als `parameters.migrate_to_chat_id`, die Nachricht wird sofort erneut geschickt
+(dieser Lauf verliert also nichts), die Id landet in `state.json` unter
+`meta.chat_id` und wird ab dann bevorzugt (`target_chat_id()`).
+
+Ein Hinweis geht zusätzlich an den Nutzer, weil `state.json` ein Repo-Artefakt ist:
+geht sie verloren, greift wieder das GitHub-Secret. Das sollte also nachgezogen werden.
+Gegen simulierte Telegram-Antworten geprüft (Umleitung, Persistenz, Hinweis, und dass
+ein Fehler *ohne* `migrate_to_chat_id` weiterhin durchschlägt).
 - **Saubere Trennung:** Abruf (`fetch`), Logik (`core`), Orchestrierung
   (`padel_watch`), UI (`webapp`) bleiben entkoppelt.
 - Poll-Intervall **nicht** unter ~10 Min drücken (Fairness ggü. Club-Server).
