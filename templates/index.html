@@ -208,6 +208,15 @@ async function boot(){
   ["#pv_date","#pv_from","#pv_to","#pv_dur"].forEach(s =>
     $(s).addEventListener("input", updateDayHint));
   refreshDirty();
+
+  // Verhindert genau die Falle "Feld geaendert, aber vergessen zu speichern,
+  // dann Seite neu geladen" - der Browser fragt vor dem Verlassen nach.
+  window.addEventListener("beforeunload", (e) => {
+    if(cfgSnapshot() !== savedSnap){
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
 }
 
 function renderCourtPicker(){
@@ -369,13 +378,52 @@ function refreshDirty(){
   updateDayHint();
 }
 
+/* HH:MM oder '24:00' (Anlage/Regeln duerfen bis Mitternacht laufen) */
+function isHHMM(s){ return /^([01]\d|2[0-3]):[0-5]\d$/.test(s) || s === "24:00"; }
+function toMin(s){ if(s === "24:00") return 1440; const [h,m]=s.split(":").map(Number); return h*60+m; }
+
+/* Verhindert Datensalat wie '22:00:00' oder leere Pflichtfelder VOR dem
+   Schreiben von config.yaml - core.py wuerde solche Werte erst beim
+   naechsten Produktivlauf mit einem harten Crash quittieren. */
+function validateConfig(d){
+  const errs = [];
+  if(!d.id_cuadro) errs.push("Plan-ID darf nicht leer sein.");
+  if(!Number.isInteger(d.days_ahead) || d.days_ahead < 1 || d.days_ahead > 21)
+    errs.push("Tage im Voraus muss zwischen 1 und 21 liegen (Buchungshorizont der Anlage).");
+  if(!isHHMM(d.day_open)) errs.push(`Anlage öffnet: "${d.day_open}" ist keine gültige Uhrzeit (HH:MM).`);
+  if(!isHHMM(d.day_close)) errs.push(`Anlage schließt: "${d.day_close}" ist keine gültige Uhrzeit (HH:MM).`);
+  if(isHHMM(d.day_open) && isHHMM(d.day_close) && toMin(d.day_open) >= toMin(d.day_close))
+    errs.push("Anlage öffnet muss vor Anlage schließt liegen.");
+  if(!Number.isInteger(d.max_messages) || d.max_messages < 1 || d.max_messages > 50)
+    errs.push("Max. Einzelnachrichten muss zwischen 1 und 50 liegen.");
+  (d.rules||[]).forEach((r,i)=>{
+    const label = `Regel "${r.name || i+1}"`;
+    if(!isHHMM(r.time_from)) errs.push(`${label}: „von" (${r.time_from}) ist keine gültige Uhrzeit (HH:MM).`);
+    if(!isHHMM(r.time_to)) errs.push(`${label}: „bis" (${r.time_to}) ist keine gültige Uhrzeit (HH:MM).`);
+    if(isHHMM(r.time_from) && isHHMM(r.time_to) && toMin(r.time_from) >= toMin(r.time_to))
+      errs.push(`${label}: „von" muss vor „bis" liegen.`);
+    if(!Number.isInteger(r.duration) || r.duration <= 0)
+      errs.push(`${label}: Dauer muss eine positive Zahl (Minuten) sein.`);
+  });
+  return errs;
+}
+
 async function saveConfig(){
-  cfg.id_cuadro = $("#id_cuadro").value;
-  cfg.days_ahead = parseInt($("#days_ahead").value);
-  cfg.day_open = $("#day_open").value;
-  cfg.day_close = $("#day_close").value;
-  cfg.max_messages = parseInt($("#max_messages").value);
-  cfg.notify_on_error = $("#notify_on_error").checked;
+  const draft = {
+    ...cfg,
+    id_cuadro: $("#id_cuadro").value.trim(),
+    days_ahead: parseInt($("#days_ahead").value),
+    day_open: $("#day_open").value.trim(),
+    day_close: $("#day_close").value.trim(),
+    max_messages: parseInt($("#max_messages").value),
+    notify_on_error: $("#notify_on_error").checked,
+  };
+  const errs = validateConfig(draft);
+  if(errs.length){
+    setStatus("#cfgStatus", false, "Nicht gespeichert:\n" + errs.map(e=>"• "+e).join("\n"));
+    return;
+  }
+  cfg = draft;
   const r = await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cfg)});
   const j = await r.json();
   setStatus("#cfgStatus", j.ok, j.ok ? "Gespeichert." : ("Fehler: "+(j.error||"?")));
