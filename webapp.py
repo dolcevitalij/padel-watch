@@ -29,7 +29,7 @@ from fetch import fetch_grid, open_session
 from matches import build_match_message, fetch_matches, filter_matches
 # dieselbe Formatierung, Link-Ermittlung und Telegram-Anbindung wie im Produktivlauf
 from padel_watch import (apply_chat_override, build_messages, group_slots,
-                         order_slots, resolve_booking_links, scrub,
+                         load_yaml, order_slots, resolve_booking_links, scrub,
                          send_telegram, target_chat_id)
 
 app = Flask(__name__)
@@ -81,7 +81,7 @@ KNOWN_COURTS = [
 # Umlaute in Clubnamen ("HOP WOLFENBÜTTEL") machen die Datei fuer den
 # Produktivlauf unter Linux unlesbar (UnicodeDecodeError vor jeder Meldung).
 def load_cfg() -> dict:
-    return yaml.safe_load(open(CONFIG_PATH, encoding="utf-8-sig"))
+    return load_yaml(CONFIG_PATH)      # UTF-8 mit Rueckfall auf cp1252
 
 
 def save_cfg(c: dict) -> None:

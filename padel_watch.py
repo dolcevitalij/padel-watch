@@ -127,6 +127,25 @@ def save_state(state: dict) -> None:
         json.dump(state, fh, indent=0, sort_keys=True)
 
 
+def load_yaml(path: str) -> dict:
+    """
+    Konfiguration lesen - UTF-8, mit Rueckfall auf cp1252.
+
+    Grund: eine unter Windows ohne encoding-Angabe geschriebene Datei ist
+    cp1252. Ein Umlaut im Clubnamen liesse den Lauf unter Linux sonst schon
+    beim Einlesen abstuerzen, also bevor irgendeine Fehlermeldung greift.
+    Geschrieben wird immer UTF-8; dieser Rueckfall ist nur das Netz darunter.
+    """
+    try:
+        with open(path, encoding="utf-8-sig") as fh:
+            return yaml.safe_load(fh)
+    except UnicodeDecodeError:
+        print(f"{path} ist nicht UTF-8 - lese als cp1252. Einmal in der "
+              f"Konsole speichern schreibt sie korrekt neu.", file=sys.stderr)
+        with open(path, encoding="cp1252") as fh:
+            return yaml.safe_load(fh)
+
+
 def keep_state(old_state: dict, meta: dict) -> dict:
     """
     Alt-Zustand unveraendert weiterschreiben, nur den Merker aktualisieren.
@@ -215,9 +234,7 @@ def rules_for_weekday(cfg: dict, d: dt.date) -> list[dict]:
 #  Hauptlauf
 # ------------------------------------------------------------------ #
 def run() -> int:
-    # encoding explizit: der Lauf laeuft unter Linux/UTF-8, die Konsole
-    # schreibt unter Windows - ohne Angabe kollidieren die Locale-Defaults
-    cfg = yaml.safe_load(open(CONFIG_FILE, encoding="utf-8-sig"))
+    cfg = load_yaml(CONFIG_FILE)
     key_override = os.environ.get("KEY_OVERRIDE") or None
 
     old_state = load_state()
