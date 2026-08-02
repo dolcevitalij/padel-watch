@@ -26,6 +26,7 @@ import requests
 
 from fetch import BASE, fetch_grid, fetch_slot_options, open_session
 from core import find_matches
+from matches import build_match_messages, fetch_matches, filter_matches
 
 # Pfade relativ zu dieser Datei, nicht zum Arbeitsverzeichnis - damit auch die
 # Web-UI build_message() importieren kann, ohne im Projektordner zu stehen.
@@ -116,13 +117,14 @@ def send_telegram(text: str) -> None:
 # ------------------------------------------------------------------ #
 def load_state() -> dict:
     try:
-        return json.load(open(STATE_FILE))
+        return json.load(open(STATE_FILE, encoding="utf-8-sig"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
 
 def save_state(state: dict) -> None:
-    json.dump(state, open(STATE_FILE, "w"), indent=0, sort_keys=True)
+    with open(STATE_FILE, "w", encoding="utf-8") as fh:
+        json.dump(state, fh, indent=0, sort_keys=True)
 
 
 def keep_state(old_state: dict, meta: dict) -> dict:
@@ -213,7 +215,9 @@ def rules_for_weekday(cfg: dict, d: dt.date) -> list[dict]:
 #  Hauptlauf
 # ------------------------------------------------------------------ #
 def run() -> int:
-    cfg = yaml.safe_load(open(CONFIG_FILE))
+    # encoding explizit: der Lauf laeuft unter Linux/UTF-8, die Konsole
+    # schreibt unter Windows - ohne Angabe kollidieren die Locale-Defaults
+    cfg = yaml.safe_load(open(CONFIG_FILE, encoding="utf-8-sig"))
     key_override = os.environ.get("KEY_OVERRIDE") or None
 
     old_state = load_state()
@@ -305,37 +309,80 @@ def run() -> int:
 
         time.sleep(1.0)     # fair gegenueber dem Club-Server
 
+    limit = int(cfg.get("max_messages", 10))
+
+    # ---------------- Play!Match: offene Partien ----------------
+    # Eigener Abschnitt und eigener Fehlerpfad: faellt die Match-Suche aus,
+    # sollen die Platz-Alarme trotzdem rausgehen.
+    fresh_matches: list[dict] = []
+    seen_matches: list[str] = list(old_state.get("matches", []))
+    match_rules = [r for r in (cfg.get("match_rules") or [])
+                   if r.get("enabled", True)]
+    if match_rules:
+        try:
+            alle_partien = fetch_matches(session=sess)
+            bekannt = set(old_state.get("matches", []))
+            gesehen: list[str] = []
+            for r in match_rules:
+                for m in filter_matches(alle_partien, r):
+                    # Die Zahl der freien Plaetze gehoert zur Kennung: tritt
+                    # spaeter noch jemand aus, ist das eine neue Meldung wert.
+                    sid = f"{m['id']}@{m['frei']}"
+                    if sid in gesehen:
+                        continue
+                    gesehen.append(sid)
+                    if sid not in bekannt:
+                        fresh_matches.append({**m, "regel": r.get("name")
+                                              or "Play!Match"})
+            seen_matches = gesehen      # ersetzt den Altstand nur bei Erfolg
+        except Exception as e:
+            msg = f"⚠️ Padel-Watch: Match-Suche fehlgeschlagen: {scrub(e)}"
+            print(msg, file=sys.stderr)
+            if cfg.get("notify_on_error"):
+                try:
+                    send_telegram(msg)
+                except Exception:
+                    pass
+
     # Versand VOR dem Schreiben des Zustands: sonst gelten Slots als gemeldet,
     # obwohl die Nachricht nie ankam - und der Persist-Schritt committet das mit
     # `if: always()`, die Meldung waere dauerhaft verloren.
-    sent = 0
+    nachrichten: list[str] = []
+    groups: list[dict] = []
     if fresh:
-        limit = int(cfg.get("max_messages", 10))
         # Zusammenhaengende Startzeiten zu Fenstern buendeln, dann je Fenster
         # den Link fuer den ERSTEN Slot holen
         groups = group_slots(fresh)
         resolve_booking_links(groups[:limit], cfg["id_cuadro"], session=sess)
-        msgs = build_messages(groups, cfg["id_cuadro"], limit)
-        for i, text in enumerate(msgs):
-            if i:
-                time.sleep(0.4)     # Telegram nicht mit einem Burst bewerfen
-            try:
-                send_telegram(text)
-                sent += 1
-            except Exception as e:
-                print(f"Telegram-Versand fehlgeschlagen bei Nachricht "
-                      f"{i + 1}/{len(msgs)}: {scrub(e)}", file=sys.stderr)
-                # Zustand NICHT fortschreiben, damit der naechste Lauf die
-                # Slots erneut meldet. Preis: bereits gesendete Nachrichten
-                # kommen dann doppelt - besser als verlorene Meldungen.
-                save_state(keep_state(old_state, meta))
-                print(f"Zustand nicht fortgeschrieben, {len(fresh)} Slots werden "
-                      f"beim naechsten Lauf erneut gemeldet.", file=sys.stderr)
-                return 1
+        nachrichten += build_messages(groups, cfg["id_cuadro"], limit)
+    if fresh_matches:
+        nachrichten += build_match_messages(fresh_matches, limit)
+
+    for i, text in enumerate(nachrichten):
+        if i:
+            time.sleep(0.4)     # Telegram nicht mit einem Burst bewerfen
+        try:
+            send_telegram(text)
+        except Exception as e:
+            print(f"Telegram-Versand fehlgeschlagen bei Nachricht "
+                  f"{i + 1}/{len(nachrichten)}: {scrub(e)}", file=sys.stderr)
+            # Zustand NICHT fortschreiben, damit der naechste Lauf alles
+            # erneut meldet. Preis: bereits gesendete Nachrichten kommen
+            # doppelt - besser als verlorene Meldungen.
+            save_state(keep_state(old_state, meta))
+            print("Zustand nicht fortgeschrieben, die Meldungen werden beim "
+                  "naechsten Lauf wiederholt.", file=sys.stderr)
+            return 1
+
+    if fresh or fresh_matches:
         print(f"{len(fresh)} neue Slots in {len(groups)} Fenster(n), "
-              f"{sent} Nachricht(en) gesendet.")
+              f"{len(fresh_matches)} neue offene Partien, "
+              f"{len(nachrichten)} Nachricht(en) gesendet.")
     else:
-        print("Keine neuen freien Slots.")
+        print("Keine neuen freien Slots und keine neuen offenen Partien.")
+
+    if seen_matches:
+        new_state["matches"] = sorted(seen_matches)
 
     # Migrierte Gruppen-Id sichern und einmal darauf hinweisen: state.json ist
     # ein Repo-Artefakt und kann verloren gehen, das GitHub-Secret nicht.

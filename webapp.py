@@ -77,12 +77,16 @@ KNOWN_COURTS = [
 ]
 
 
+# encoding immer explizit: unter Windows waehlt open() sonst cp1252, und
+# Umlaute in Clubnamen ("HOP WOLFENBÜTTEL") machen die Datei fuer den
+# Produktivlauf unter Linux unlesbar (UnicodeDecodeError vor jeder Meldung).
 def load_cfg() -> dict:
-    return yaml.safe_load(open(CONFIG_PATH))
+    return yaml.safe_load(open(CONFIG_PATH, encoding="utf-8-sig"))
 
 
 def save_cfg(c: dict) -> None:
-    yaml.safe_dump(c, open(CONFIG_PATH, "w"), allow_unicode=True, sort_keys=False)
+    with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
+        yaml.safe_dump(c, fh, allow_unicode=True, sort_keys=False)
 
 
 def fmt_fecha(d: dt.date) -> str:

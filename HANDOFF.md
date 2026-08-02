@@ -150,6 +150,7 @@ optionale Telegram-Warnung (`notify_on_error`), damit stille Ausfälle auffallen
 |---|---|---|
 | `config.yaml` | **Alle** Nutzereinstellungen (Regeln, Zeiten, Courts, `max_messages`) | fertig |
 | `core.py` | Frei-Slot-Berechnung (Komplement, Filter) | **gegen Live-Daten verifiziert** ✅ |
+| `matches.py` | Play!Match: offene Partien von `Matches/Search.aspx` lesen, filtern, melden | **live getestet** ✅ (siehe §10) |
 | `fetch.py` | `open_session` (Cookies + key), `fetch_grid`, `fetch_slot_options` (Buchungs-Token) | **live getestet** ✅ |
 | `padel_watch.py` | Orchestrierung: Abruf → Filter → Diff → Telegram | Logik getestet; Telegram-Pfad noch nicht live |
 | `test_key.py` | Einmaliger Verbindungs-/key-Test | **grün** ✅ |
@@ -417,3 +418,49 @@ Leeres Datum = keine Warnung. Nach jeder Token-Erneuerung Datum aktualisieren.
 
 Der Prüfaufruf steht **vor** dem Abruf, damit die Warnung auch rausgeht, wenn der
 Club-Server gerade nicht erreichbar ist.
+
+---
+
+## 10. Play!Match — offene Partien
+
+Zweiter Alarmtyp: Partien, denen noch Spieler fehlen. **Nur Meldung mit Link**, kein
+Beitritt, keine Buchung.
+
+**Quelle:** `https://kunden.hallofpadel.com/Matches/Search.aspx` — serverseitig
+gerendert, also weder `key` noch XHR nötig, ein GET genügt. Gelistet werden
+ausschließlich Partien mit freien Plätzen; kein Eintrag hat 4/4 Spieler. Die Seite
+deckt **alle Standorte** ab (Braunschweig, Wolfenbüttel, Wendeburg), nicht nur
+Plan `id=4`.
+
+**Zwei Fallstricke beim Parsen** (beide verifiziert):
+- Kacheln am Wiederholungs-Index `WUCRegistroPartida_<N>_` schneiden, **nicht** an
+  einer CSS-Klasse: die versteckten Niveau-Felder liegen im Markup *vor* dem
+  Klassenmarker und landen sonst bei der falschen Partie.
+- Besetzte Plätze = Anker mit `class="fotoParticipante"`. Es gibt immer vier
+  Teilnehmer-Anker; alle zu zählen ergäbe stets 4/4 und damit nie einen Treffer.
+
+Gegenprobe gegen den Buchungsplan: dessen `Ocupaciones` melden für dieselben Termine
+`"1 freie Plätze"` bzw. `"2 freie Plätze"` — deckt sich mit dem Parser.
+
+**Regelfelder** (`match_rules` in `config.yaml`): `stunden_voraus`, `zeit_von`/
+`zeit_bis` (leer = egal, von > bis = Fenster über Mitternacht), `weekdays`,
+`niveau_min`, `min_frei`, `clubs`, `enabled`.
+
+`niveau_min` prüft die **Untergrenze der Partie** — eine Runde mit `0,00 - 7,00`
+fällt bei `niveau_min: 2` heraus, weil dort auch Anfänger mitspielen. Die Obergrenze
+wird bewusst ignoriert.
+
+**Diff-Kennung: `<match-id>@<freie Plätze>`.** Die Platzzahl gehört absichtlich dazu —
+tritt später noch jemand aus, ist das eine neue Meldung wert. Gespeichert unter dem
+Sonderschlüssel `matches` in `state.json`.
+
+**Fehler sind isoliert:** fällt `Search.aspx` aus, laufen die Platz-Alarme weiter, der
+Lauf endet mit 0, und der Altstand der Partien bleibt erhalten (sonst würde der
+nächste Lauf alles erneut melden).
+
+### Offen
+Ob kurzfristige Ersatzgesuche (< 24 h vor Spielbeginn) überhaupt gelistet werden, ist
+**nicht bewiesen** — am 02.08. begann die Liste erst am 04.08., der Buchungsplan zeigte
+für den 03.08. aber ebenfalls keine Partie mit freien Plätzen. Falls sich eine Sperre
+bestätigt, wäre der Buchungsplan die bessere Quelle: dort steht die Platzzahl direkt an
+der Belegung, und er wird ohnehin jede Runde abgerufen.

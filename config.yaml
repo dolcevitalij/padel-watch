@@ -5,7 +5,7 @@ id_cuadro: '4'
 match_rules:
 - clubs:
   - HOP BRAUNSCHWEIG
-  - HOP WOLFENBÜTTEL
+  - HOP WOLFENBÃœTTEL
   - HOP WENDEBURG
   enabled: true
   min_frei: 1

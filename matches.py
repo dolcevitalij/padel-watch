@@ -207,6 +207,24 @@ def filter_matches(matches: list[dict], rule: dict,
     return sorted(treffer, key=lambda m: m["beginn"])
 
 
+def build_match_messages(matches: list[dict], limit: int = 10) -> list[str]:
+    """
+    Eine Nachricht pro Partie, chronologisch. Ueber `limit` hinaus wird
+    zusammengefasst - sonst flutet der erste Lauf mit weitem Zeitfenster.
+    """
+    geordnet = sorted(matches, key=lambda m: m["beginn"])
+    msgs = [build_match_message(m, m.get("regel", "Play!Match"))
+            for m in geordnet[:limit]]
+    rest = geordnet[limit:]
+    if rest:
+        zeilen = [f"  • {m['beginn']:%a %d.%m. %H:%M} · {m.get('court') or '?'}"
+                  f" ({m['frei']} frei, {m.get('niveau_text') or '-'})"
+                  for m in rest]
+        msgs.append(f"➕ <b>{len(rest)} weitere offene Partien</b>\n"
+                    + "\n".join(zeilen) + f"\n\n🔗 {SEARCH_URL}")
+    return msgs
+
+
 def build_match_message(m: dict, regel: str = "Play!Match") -> str:
     """Telegram-Nachricht fuer eine offene Partie (HTML, wie send_telegram erwartet)."""
     wt = m.get("wochentag") or m["beginn"].strftime("%A")
