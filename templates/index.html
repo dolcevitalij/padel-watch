@@ -136,6 +136,13 @@
   .tg b{color:var(--tg-strong)}
   .tg a{color:var(--tg-link)}
   .tg.empty{color:var(--mut);font-style:italic;white-space:normal}
+  /* Play!Match-Trefferliste */
+  table.mm{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}
+  table.mm th{text-align:left;font-weight:600;font-size:11.5px;text-transform:uppercase;
+              letter-spacing:.6px;color:var(--mut);padding:0 10px 6px 0}
+  table.mm td{padding:6px 10px 6px 0;border-top:1px solid var(--line);vertical-align:top}
+  table.mm td.mut{color:var(--mut)}
+  table.mm tr:hover td{background:var(--elev)}
   /* Theme-Umschalter */
   #themeBtn{margin-left:auto;padding:5px 11px;font-size:12.5px;line-height:1.4}
   header .pill{margin-left:0}
@@ -188,6 +195,23 @@
       <span id="cfgDirty" class="tag"></span>
     </div>
     <div id="cfgStatus"></div>
+  </section>
+
+  <!-- PLAY!MATCH -->
+  <section class="card" id="mmCard">
+    <h2>Play!Match — offene Partien</h2>
+    <div class="note" style="margin:0 0 14px">
+      Meldet Partien, denen noch Spieler fehlen. Quelle ist die Match-Suche des Clubs;
+      es wird nur gemeldet und verlinkt, nie beigetreten.
+    </div>
+    <div id="mrules"></div>
+    <div class="btnrow">
+      <button class="ghost" onclick="addMatchRule()">+ Play!Match-Regel</button>
+      <span class="tag">wird mit „Konfiguration speichern“ oben gesichert</span>
+    </div>
+    <div id="mmStatus"></div>
+    <div id="mmResult"></div>
+    <div id="mmMsg"></div>
   </section>
 
   <!-- TESTS -->
@@ -248,6 +272,7 @@ function toggleTheme(){
   try { localStorage.setItem("padelwatch-theme", dark ? "dark" : "light"); } catch(e) {}
 }
 let COURTS = [];
+let CLUBS = [];
 let cfg = null;
 let loadedRule = null;   // welche Regel gerade in der Vorschau liegt
 let savedSnap = "";      // Stand der zuletzt gespeicherten config.yaml
@@ -255,6 +280,7 @@ let savedSnap = "";      // Stand der zuletzt gespeicherten config.yaml
 async function boot(){
   applyTheme(document.documentElement.dataset.theme === "dark");  // Beschriftung setzen
   COURTS = await (await fetch("/api/courts")).json();
+  CLUBS  = await (await fetch("/api/match-clubs")).json();
   cfg = await (await fetch("/api/config")).json();
   $("#id_cuadro").value = cfg.id_cuadro;
   $("#days_ahead").value = cfg.days_ahead;
@@ -265,6 +291,7 @@ async function boot(){
   $("#token_warn_days").value = cfg.token_warn_days ?? 7;
   $("#notify_on_error").checked = !!cfg.notify_on_error;
   renderRules();
+  renderMatchRules();
   renderCourtPicker();
   const t = new Date(); t.setDate(t.getDate()+1);
   $("#pv_date").value = t.toISOString().slice(0,10);
@@ -447,6 +474,94 @@ function updateDayHint(){
   box.textContent = lines.join("\n");
 }
 
+/* ---------- Play!Match ---------- */
+function renderMatchRules(){
+  const box = $("#mrules"); box.innerHTML = "";
+  (cfg.match_rules||[]).forEach((r,i)=>{
+    const on = isEnabled(r);
+    const div = document.createElement("div");
+    div.className = "rule" + (on ? "" : " paused");
+    div.innerHTML = `
+      <div class="head">
+        <input value="${r.name||""}" oninput="cfg.match_rules[${i}].name=this.value" placeholder="Regelname">
+        <span class="pausebtn ${on?"active":"off"}" onclick="toggleMatchRule(${i})"
+              title="${on?"Regel pausieren":"Regel aktivieren"}">${on?"● aktiv":"❚❚ pausiert"}</span>
+        <span class="x go" onclick="previewMatchRule(${i})" title="Diese Regel jetzt gegen die Live-Liste prüfen">→ Vorschau</span>
+        <span class="x" onclick="delMatchRule(${i})">entfernen ✕</span>
+      </div>
+      <div class="row">
+        <div><label title="Nur Partien, die innerhalb dieser Frist beginnen">Stunden voraus</label>
+          <input type="number" min="1" max="504" value="${r.stunden_voraus ?? 24}"
+                 oninput="cfg.match_rules[${i}].stunden_voraus=parseInt(this.value)"></div>
+        <div><label title="Untergrenze der Partie muss mindestens so hoch sein – die Obergrenze wird ignoriert">Niveau ab</label>
+          <input type="number" step="0.25" min="0" max="7" value="${r.niveau_min ?? 0}"
+                 oninput="cfg.match_rules[${i}].niveau_min=parseFloat(this.value)"></div>
+        <div><label>Min. freie Plätze</label>
+          <input type="number" min="1" max="3" value="${r.min_frei ?? 1}"
+                 oninput="cfg.match_rules[${i}].min_frei=parseInt(this.value)"></div>
+      </div>
+      <label style="margin-top:12px">Clubs (leer = alle)</label>
+      <div class="courts-pick" id="mclubs${i}"></div>`;
+    box.appendChild(div);
+    const cbox = div.querySelector("#mclubs"+i);
+    CLUBS.forEach(c=>{
+      const sel = (r.clubs||[]).includes(c);
+      const el = document.createElement("span");
+      el.className = "day"+(sel?" on":""); el.textContent = c;
+      el.onclick = ()=>{ el.classList.toggle("on"); syncClubs(i); };
+      cbox.appendChild(el);
+    });
+  });
+}
+function syncClubs(i){
+  cfg.match_rules[i].clubs = [...document.querySelectorAll("#mclubs"+i+" .on")].map(e=>e.textContent);
+  refreshDirty();
+}
+function toggleMatchRule(i){
+  cfg.match_rules[i].enabled = !isEnabled(cfg.match_rules[i]);
+  renderMatchRules(); refreshDirty();
+}
+function addMatchRule(){
+  cfg.match_rules = cfg.match_rules||[];
+  cfg.match_rules.push({name:"Kurzfristig", enabled:true, stunden_voraus:24,
+                        niveau_min:0, min_frei:1, clubs:[]});
+  renderMatchRules(); refreshDirty();
+}
+function delMatchRule(i){ cfg.match_rules.splice(i,1); renderMatchRules(); refreshDirty(); }
+
+async function previewMatchRule(i){
+  const r = cfg.match_rules[i];
+  setStatus("#mmStatus", true, "Lade offene Partien …");
+  $("#mmResult").innerHTML = ""; $("#mmMsg").innerHTML = "";
+  const j = await (await fetch("/api/match-preview",{method:"POST",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify(r)})).json();
+  if(!j.ok){ setStatus("#mmStatus", false, "Fehler: "+j.error); return; }
+
+  setStatus("#mmStatus", j.count>0,
+    `${j.count} Treffer von ${j.gesamt} offenen Partien insgesamt.`
+    + (j.count===0 && j.naechste ? `\nDie früheste Partie beginnt ${j.naechste} – für einen Test`
+        + ` „Stunden voraus“ hochsetzen.` : ""));
+
+  if(j.matches.length){
+    const rows = j.matches.map(m=>`
+      <tr><td class="mono">${m.beginn.slice(8,10)}.${m.beginn.slice(5,7)}. ${m.beginn.slice(11)}</td>
+          <td><b>${m.frei}</b> von 4</td>
+          <td class="mono">${m.niveau||"-"}</td>
+          <td>${m.geschlecht||"-"}</td>
+          <td>${m.court||"?"}</td>
+          <td class="mut">${m.club||""}</td>
+          <td><a href="${m.url}" target="_blank" rel="noopener">öffnen</a></td></tr>`).join("");
+    $("#mmResult").innerHTML = `<table class="mm"><thead><tr>
+      <th>Beginn</th><th>frei</th><th>Niveau</th><th>Geschl.</th>
+      <th>Court</th><th>Club</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  if(j.messages && j.messages.length){
+    $("#mmMsg").innerHTML = `<div class="tglabel">So sähen die Telegram-Nachrichten aus
+        — <b>${j.messages.length}</b> Stück, eine pro Partie</div>
+      <div class="tgstack">${j.messages.map(m=>`<div class="tg">${tgHtml(m)}</div>`).join("")}</div>`;
+  }
+}
+
 /* ---------- Speicherstand ---------- */
 function cfgSnapshot(){
   return JSON.stringify({
@@ -458,6 +573,7 @@ function cfgSnapshot(){
     token_expires: $("#token_expires").value,
     token_warn_days: parseInt($("#token_warn_days").value),
     rules: cfg && cfg.rules || [],
+    match_rules: cfg && cfg.match_rules || [],
     notify_on_error: $("#notify_on_error").checked,
   });
 }
@@ -500,6 +616,15 @@ function validateConfig(d){
       errs.push(`${label}: „von" muss vor „bis" liegen.`);
     if(!Number.isInteger(r.duration) || r.duration <= 0)
       errs.push(`${label}: Dauer muss eine positive Zahl (Minuten) sein.`);
+  });
+  (d.match_rules||[]).filter(isEnabled).forEach((r,i)=>{
+    const label = `Play!Match-Regel "${r.name || i+1}"`;
+    if(!Number.isInteger(r.stunden_voraus) || r.stunden_voraus < 1 || r.stunden_voraus > 504)
+      errs.push(`${label}: „Stunden voraus" muss zwischen 1 und 504 liegen.`);
+    if(!(typeof r.niveau_min === "number") || r.niveau_min < 0 || r.niveau_min > 7)
+      errs.push(`${label}: „Niveau ab" muss zwischen 0 und 7 liegen.`);
+    if(!Number.isInteger(r.min_frei) || r.min_frei < 1 || r.min_frei > 3)
+      errs.push(`${label}: „Min. freie Plätze" muss zwischen 1 und 3 liegen.`);
   });
   return errs;
 }

@@ -26,6 +26,7 @@ from flask import Flask, request, jsonify, render_template
 
 from core import parse_courts, find_matches, merge_intervals
 from fetch import fetch_grid, open_session
+from matches import build_match_message, fetch_matches, filter_matches
 # dieselbe Formatierung, Link-Ermittlung und Telegram-Anbindung wie im Produktivlauf
 from padel_watch import (apply_chat_override, build_messages, group_slots,
                          order_slots, resolve_booking_links, scrub,
@@ -239,6 +240,54 @@ def preview():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify(build_preview(data, cfg, body, session=sess))
+
+
+# Clubs aus den Live-Daten; die Liste ist stabil, ein Abruf beim Seitenaufbau
+# waere unnoetige Last
+KNOWN_CLUBS = ["HOP BRAUNSCHWEIG", "HOP WOLFENBÜTTEL", "HOP WENDEBURG"]
+
+
+@app.get("/api/match-clubs")
+def get_match_clubs():
+    return jsonify(KNOWN_CLUBS)
+
+
+@app.post("/api/match-preview")
+def match_preview():
+    """
+    Play!Match-Regel gegen die Live-Liste offener Partien pruefen.
+    Ein GET auf Search.aspx, kein key noetig.
+    """
+    rule = request.get_json() or {}
+    try:
+        alle = fetch_matches()
+    except Exception as e:
+        return jsonify({"ok": False, "error": scrub(e)})
+
+    treffer = filter_matches(alle, rule)
+    limit = int(load_cfg().get("max_messages", 10))
+    name = rule.get("name") or "Play!Match"
+
+    def zeige(m):
+        return {
+            "beginn": m["beginn"].strftime("%Y-%m-%d %H:%M"),
+            "wochentag": m["wochentag"], "court": m["court"], "club": m["club"],
+            "frei": m["frei"], "spieler": m["spieler"],
+            "niveau": m["niveau_text"], "niveau_von": m["niveau_von"],
+            "geschlecht": m["geschlecht"], "art": m["art"],
+            "sportart": m["sportart"], "url": m["url"],
+        }
+
+    return jsonify({
+        "ok": True,
+        "gesamt": len(alle),
+        "count": len(treffer),
+        "naechste": min((m["beginn"] for m in alle), default=None)
+                    and min(m["beginn"] for m in alle).strftime("%d.%m. %H:%M"),
+        "matches": [zeige(m) for m in treffer],
+        "messages": [build_match_message(m, name) for m in treffer[:limit]],
+        "max_messages": limit,
+    })
 
 
 @app.post("/api/test-telegram")

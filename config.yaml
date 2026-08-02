@@ -3,6 +3,16 @@ day_open: 00:00
 days_ahead: 14
 id_cuadro: '4'
 max_messages: 10
+# Play!Match: offene Partien, denen Spieler fehlen. Noch NICHT im Produktivlauf
+# aktiv - bisher nur in der Konsole testbar.
+match_rules:
+- name: Kurzfristig
+  enabled: true
+  stunden_voraus: 24
+  niveau_min: 0
+  min_frei: 1
+  clubs:
+  - HOP BRAUNSCHWEIG
 notify_on_error: true
 rules:
 - courts:
