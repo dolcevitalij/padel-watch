@@ -5,16 +5,16 @@ id_cuadro: '4'
 match_rules:
 - clubs:
   - HOP BRAUNSCHWEIG
-  - HOP WOLFENBÃœTTEL
+  - HOP WOLFENBÜTTEL
   - HOP WENDEBURG
   enabled: true
   min_frei: 1
   name: PlayMatch 3 Tage
   niveau_min: 2
   stunden_voraus: 72
+  weekdays: []
   zeit_bis: '20:30'
   zeit_von: '16:00'
-  weekdays: []
 max_messages: 10
 notify_on_error: true
 rules:
