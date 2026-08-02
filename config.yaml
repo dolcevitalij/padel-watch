@@ -1,6 +1,6 @@
 day_close: '24:00'
 day_open: 00:00
-days_ahead: 7
+days_ahead: 14
 id_cuadro: '4'
 max_messages: 10
 notify_on_error: true
@@ -45,11 +45,9 @@ rules:
   time_to: '18:00'
   weekdays:
   - Fr
-- courts:
-  - '16'
-  - '17'
+- courts: []
   duration: 90
-  enabled: true
+  enabled: false
   name: Test
   time_from: 04:00
   time_to: 06:00
