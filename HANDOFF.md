@@ -331,9 +331,25 @@ Arbeitsverzeichnis), damit der Start über `.claude/launch.json` von außerhalb 
 
 | Datei | Zweck |
 |---|---|
-| `start-webapp.bat` | Testkonsole starten → http://localhost:5000 |
+| `start-webapp.bat` | Testkonsole starten und **Chrome** öffnen, sobald sie antwortet |
+| `open-console.ps1` | wartet auf Port 5000, öffnet dann Chrome (von der .bat im Hintergrund aufgerufen) |
 | `publish-config.bat` | `config.yaml` committen + pushen, falls geändert |
 | `trigger-run.bat` | Workflow per API auslösen (braucht `GITHUB_TOKEN` in `.env`) |
+
+**Warum die .bat wartet, statt den Browser sofort zu öffnen:** Flask braucht ein bis
+zwei Sekunden, bis der Port lauscht. Ein sofort geöffneter Tab zeigt
+`ERR_CONNECTION_REFUSED`, obwohl alles in Ordnung ist. `open-console.ps1` pollt bis
+zu 20 s und öffnet **nichts**, wenn der Server nicht hochkommt — dann steht der Fehler
+im Konsolenfenster.
+
+**Warum `use_reloader=False`:** Flasks Auto-Reloader startet Kindprozesse und
+hinterlässt Ketten von Python-Prozessen, bei denen ein **älterer** den Port hält.
+Der antwortet mit veralteten Werten — konkret passiert: nach dem Umstellen auf die
+Gruppen-Chat-Id ging die Testnachricht weiter an den alten Einzelchat, weil `.env`
+nur beim Prozessstart gelesen wird. Jetzt gibt es pro Start genau einen Server;
+nach Änderungen an Code oder `.env` einmal neu starten. Die .bat erkennt eine
+laufende Instanz, startet keine zweite und weist auf
+`Get-Process python | Stop-Process -Force` hin.
 
 ---
 

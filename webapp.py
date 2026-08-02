@@ -257,4 +257,10 @@ def test_telegram():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    # use_reloader=False mit Absicht: der Auto-Reloader startet Kindprozesse und
+    # hinterlaesst dabei Ketten von Python-Prozessen, bei denen ein AELTERER den
+    # Port haelt. Der antwortet dann mit veralteten Werten - z.B. mit der alten
+    # TELEGRAM_CHAT_ID, weil .env nur beim Start gelesen wird. Debug-Fehlerseiten
+    # bleiben erhalten; nach Code- oder .env-Aenderungen einmal neu starten
+    # (start-webapp.bat erkennt eine laufende Instanz und weist darauf hin).
+    app.run(debug=True, port=5000, use_reloader=False)
