@@ -58,6 +58,12 @@
   .pill.ok{color:var(--free);border-color:var(--free)}
   .pill.err{color:var(--busy);border-color:var(--busy)}
   main{max-width:1000px;margin:0 auto;padding:22px;display:grid;gap:20px}
+  /* Trennt "Einstellen" von "Pruefen" */
+  .grouphead{display:flex;align-items:center;gap:12px;margin:8px 2px -8px;
+             font-size:11.5px;letter-spacing:1.6px;text-transform:uppercase;
+             color:var(--mut);font-weight:600}
+  .grouphead::after{content:"";flex:1;height:1px;background:var(--line)}
+  #saveCard{padding:14px 20px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
         padding:18px 20px}
   .card h2{font-size:13px;text-transform:uppercase;letter-spacing:1.2px;
@@ -165,9 +171,11 @@
 </header>
 
 <main>
-  <!-- KONFIGURATION -->
+  <p class="grouphead">Einstellen</p>
+
+  <!-- GRUNDEINSTELLUNGEN -->
   <section class="card" id="cfgCard">
-    <h2>Konfiguration</h2>
+    <h2>Grundeinstellungen</h2>
     <div class="row">
       <div><label>Plan-ID (Grid.aspx?id=)</label><input id="id_cuadro"></div>
       <div><label>Tage im Voraus</label><input id="days_ahead" type="number" min="1" max="21"></div>
@@ -187,48 +195,72 @@
         Bei Abruf-Fehlern eine Telegram-Warnung senden</label>
     </div>
 
-    <h2 style="margin-top:22px">Regeln</h2>
+  </section>
+
+  <!-- REGELN: FREIE PLAETZE -->
+  <section class="card" id="rulesCard">
+    <h2>Regeln · freie Plätze</h2>
+    <div class="note" style="margin:0 0 14px">
+      Meldet freie Zeitfenster auf den Courts, gebündelt je zusammenhängender Strecke.
+    </div>
     <div id="rules"></div>
     <div class="btnrow">
       <button class="ghost" onclick="addRule()">+ Regel hinzufügen</button>
-      <button class="primary" onclick="saveConfig()">Konfiguration speichern</button>
-      <span id="cfgDirty" class="tag"></span>
     </div>
-    <div id="cfgStatus"></div>
   </section>
 
-  <!-- PLAY!MATCH -->
+  <!-- REGELN: PLAY!MATCH -->
   <section class="card" id="mmCard">
-    <h2>Play!Match — offene Partien</h2>
+    <h2>Regeln · Play!Match</h2>
     <div class="note" style="margin:0 0 14px">
-      Meldet Partien, denen noch Spieler fehlen. Quelle ist die Match-Suche des Clubs;
+      Offene Partien, denen noch Spieler fehlen. Quelle ist die Match-Suche des Clubs;
       es wird nur gemeldet und verlinkt, nie beigetreten.
     </div>
     <div id="mrules"></div>
     <div class="btnrow">
       <button class="ghost" onclick="addMatchRule()">+ Play!Match-Regel</button>
-      <span class="tag">wird mit „Konfiguration speichern“ oben gesichert</span>
     </div>
-    <div id="mmStatus"></div>
-    <div id="mmResult"></div>
-    <div id="mmMsg"></div>
   </section>
+
+  <!-- SPEICHERN -->
+  <section class="card" id="saveCard">
+    <div class="btnrow" style="margin-top:0">
+      <button class="primary" onclick="saveConfig()">Konfiguration speichern</button>
+      <span id="cfgDirty" class="tag"></span>
+      <span class="tag" style="opacity:.75">sichert alle drei Abschnitte oben</span>
+    </div>
+    <div id="cfgStatus"></div>
+  </section>
+
+  <p class="grouphead">Prüfen</p>
 
   <!-- TESTS -->
   <section class="card">
-    <h2>Verbindung &amp; key</h2>
+    <h2>Verbindung &amp; Telegram</h2>
     <div class="btnrow">
       <button onclick="testConn()">Verbindung testen</button>
       <button onclick="testTg()">Telegram-Testnachricht senden</button>
     </div>
     <div id="connStatus"></div>
     <div class="note">Nutzt <span class="mono">KEY_OVERRIDE</span> / <span class="mono">TELEGRAM_*</span>
-      aus den Umgebungsvariablen, falls gesetzt.</div>
+      aus der <span class="mono">.env</span> bzw. den Umgebungsvariablen.</div>
   </section>
 
-  <!-- VORSCHAU -->
+  <!-- VORSCHAU: PLAY!MATCH -->
+  <section class="card" id="mmPreview">
+    <h2>Vorschau · Play!Match</h2>
+    <div class="note" style="margin:0">
+      Wird über „→ Vorschau“ an einer Play!Match-Regel gestartet und prüft sie
+      gegen die aktuelle Liste offener Partien.
+    </div>
+    <div id="mmStatus"></div>
+    <div id="mmResult"></div>
+    <div id="mmMsg"></div>
+  </section>
+
+  <!-- VORSCHAU: PLAETZE -->
   <section class="card" id="pvCard">
-    <h2>Regel-Vorschau (ohne Telegram)</h2>
+    <h2>Vorschau · freie Plätze (ohne Telegram-Versand)</h2>
     <div class="row">
       <div><label>Datum</label><input id="pv_date" type="date"></div>
       <div><label>von</label><input id="pv_from" class="mono" value="18:00"></div>
@@ -290,6 +322,15 @@ async function boot(){
   $("#token_expires").value = cfg.token_expires ?? "";
   $("#token_warn_days").value = cfg.token_warn_days ?? 7;
   $("#notify_on_error").checked = !!cfg.notify_on_error;
+  // Fehlende Listen-/Textfelder ergaenzen, BEVOR der Vergleichsstand genommen
+  // wird. Sonst legt schon das Antippen und Wiederabwaehlen eines Chips ein
+  // neues Feld an und die Konfiguration gilt faelschlich als geaendert.
+  (cfg.rules||[]).forEach(r=>{ r.weekdays=r.weekdays||[]; r.courts=r.courts||[]; });
+  (cfg.match_rules||[]).forEach(r=>{
+    r.weekdays=r.weekdays||[]; r.clubs=r.clubs||[];
+    r.zeit_von=r.zeit_von||""; r.zeit_bis=r.zeit_bis||"";
+  });
+
   renderRules();
   renderMatchRules();
   renderCourtPicker();
@@ -297,7 +338,10 @@ async function boot(){
   $("#pv_date").value = t.toISOString().slice(0,10);
 
   savedSnap = cfgSnapshot();
-  $("#cfgCard").addEventListener("input", refreshDirty);
+  // auf <main> statt auf eine Karte: die Konfiguration verteilt sich auf mehrere
+  // Karten, und Vorschau-Felder gehen nicht in cfgSnapshot() ein - lösen also
+  // auch keinen falschen "ungespeichert"-Zustand aus
+  document.querySelector("main").addEventListener("input", refreshDirty);
   ["#pv_date","#pv_from","#pv_to","#pv_dur"].forEach(s =>
     $(s).addEventListener("input", updateDayHint));
   refreshDirty();
@@ -556,6 +600,8 @@ async function previewMatchRule(i){
   const r = cfg.match_rules[i];
   setStatus("#mmStatus", true, "Lade offene Partien …");
   $("#mmResult").innerHTML = ""; $("#mmMsg").innerHTML = "";
+  const soft = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  $("#mmPreview").scrollIntoView({behavior: soft ? "smooth" : "auto", block:"start"});
   const j = await (await fetch("/api/match-preview",{method:"POST",
     headers:{"Content-Type":"application/json"}, body:JSON.stringify(r)})).json();
   if(!j.ok){ setStatus("#mmStatus", false, "Fehler: "+j.error); return; }
