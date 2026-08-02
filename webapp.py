@@ -27,9 +27,9 @@ from flask import Flask, request, jsonify, render_template
 from core import parse_courts, find_matches, merge_intervals
 from fetch import fetch_grid, open_session
 # dieselbe Formatierung, Link-Ermittlung und Telegram-Anbindung wie im Produktivlauf
-from padel_watch import (apply_chat_override, build_messages, order_slots,
-                         resolve_booking_links, scrub, send_telegram,
-                         target_chat_id)
+from padel_watch import (apply_chat_override, build_messages, group_slots,
+                         order_slots, resolve_booking_links, scrub,
+                         send_telegram, target_chat_id)
 
 app = Flask(__name__)
 # neben webapp.py, nicht relativ zum Arbeitsverzeichnis - damit die UI auch
@@ -166,9 +166,10 @@ def build_preview(payload: dict, cfg: dict, body: dict,
     rule_name = body.get("rule") or "Vorschau"
     limit = int(cfg.get("max_messages", 10))
     slots = order_slots([{**m, "date": day, "rule": rule_name} for m in matches])
-    if slots and body.get("links"):
-        resolve_booking_links(slots[:limit], cfg["id_cuadro"], session=session)
-    messages = build_messages(slots, cfg["id_cuadro"], limit) if slots else []
+    groups = group_slots(slots)          # zusammenhaengende Startzeiten buendeln
+    if groups and body.get("links"):
+        resolve_booking_links(groups[:limit], cfg["id_cuadro"], session=session)
+    messages = build_messages(groups, cfg["id_cuadro"], limit) if groups else []
 
     return {
         "ok": True,
@@ -179,8 +180,9 @@ def build_preview(payload: dict, cfg: dict, body: dict,
         "win": [hhmm_to_min(body["time_from"]), hhmm_to_min(body["time_to"])],
         "courts": result,
         "count": len(matches),
+        "groups": len(groups),
         "messages": messages,
-        "max_messages": int(cfg.get("max_messages", 10)),
+        "max_messages": limit,
     }
 
 

@@ -131,7 +131,7 @@ nur noch Fallback, wenn kein Token zu holen war.
 | Ausführung ohne eigenen Rechner | **GitHub Actions**, angestoßen von einem **externen Cron-Dienst** (alle 10 Min) | kostenlos, kein Server; GitHubs eigener Scheduler löste nie aus, siehe §9 |
 | Benachrichtigung | **Telegram-Bot** (direkter `sendMessage`-Call) | kein App-Store/Dev-Account, echter Push |
 | Empfänger | **Telegram-Gruppe** statt Einzelchat (`TELEGRAM_CHAT_ID` = negative Gruppen-Id) | Freunde mitnutzen lassen = in die Gruppe einladen, keine Codeänderung, keine Liste von Chat-Ids zu pflegen |
-| Nachrichten-Zuschnitt | **eine Nachricht pro Slot**, chronologisch, 0,4 s Pause dazwischen | jede Meldung ist einzeln abtippbar/teilbar; Sammel-Nachricht erst über `max_messages` (Default 10), damit der erste Lauf mit leerem `state.json` nicht flutet |
+| Nachrichten-Zuschnitt | **eine Nachricht pro zusammenhängendem Fenster** (`group_slots`), chronologisch, 0,4 s Pause dazwischen | 13:00 und 13:30 bei 90 Min sind nicht zwei Angebote, sondern die freie Strecke 13:00–15:00; Sammel-Nachricht erst über `max_messages` Fenster (Default 10) |
 | Link in der Nachricht | **direkter Slot-Link** über einen frisch geholten Token (§2) | ein Tap führt in den Buchungsdialog dieses Slots; Fallback ist der Plan-Link |
 | HTTP-Sessions | **eine Session pro Lauf** (`open_session`) | Grid.aspx wird einmal statt 15× geladen — spart Requests trotz der neuen Token-Abrufe |
 | Automatisierungstool (n8n/Zapier)? | **Nein** | überflüssige Schicht; die Logik ist maßgeschneiderter Code |
@@ -220,6 +220,11 @@ Wiederverwendet `core.py` und `fetch.py` (keine Logik-Duplikation).
   Rechts neben dem Court steht das buchbare Fenster plus Anzahl der Startzeiten statt
   einer langen Liste. Die Zeitachse dünnt bei langen Spannen automatisch auf
   2-Stunden-Schritte aus (nötig seit 24/7).
+- **Bündelung:** `group_slots()` fasst aufeinanderfolgende Startzeiten desselben
+  Courts am selben Tag zu einem Fenster zusammen (Abstand == Raster). Der
+  Buchungs-Link gilt für den **ersten** Slot des Fensters; die Nachricht nennt das
+  Fenster und die Anzahl möglicher Starts statt jeder einzelnen Uhrzeit. Eine Lücke
+  trennt, verschiedene Courts werden nie vermischt.
 - **Telegram-Nachrichten-Vorschau:** unter den Timelines wird **jede** Nachricht als
   eigene Chat-Blase gerendert (inkl. Fettschrift und klickbarem Link) — gebaut von
   `padel_watch.build_messages`, also identisch zum Produktivlauf, keine zweite

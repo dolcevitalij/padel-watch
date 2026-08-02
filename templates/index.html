@@ -586,11 +586,12 @@ function renderMessage(j){
       <div class="tg empty">Keine Treffer – der Lauf würde nichts schicken.</div>`;
     return;
   }
-  const over = j.count > j.max_messages;
+  const over = j.groups > j.max_messages;
   box.innerHTML = `<div class="tglabel">So sähen die Telegram-Nachrichten aus
-      — <b>${msgs.length}</b> Stück, eine pro Slot${over
-        ? `, die letzte fasst die ${j.count - j.max_messages} über dem Limit von
-           ${j.max_messages} zusammen` : ""}
+      — <b>${msgs.length}</b> Stück: ${j.count} Startzeiten zu
+      <b>${j.groups}</b> zusammenhängenden Fenster(n) gebündelt${over
+        ? `, die letzte Nachricht fasst die ${j.groups - j.max_messages} über dem
+           Limit von ${j.max_messages} zusammen` : ""}
       <span>· gebaut mit derselben Funktion wie im Produktivlauf; dort erscheinen nur
       Slots, die seit dem letzten Lauf neu frei geworden sind</span></div>
     <div class="tgstack">${msgs.map(m=>`<div class="tg">${tgHtml(m)}</div>`).join("")}</div>`;

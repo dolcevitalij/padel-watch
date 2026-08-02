@@ -311,10 +311,11 @@ def run() -> int:
     sent = 0
     if fresh:
         limit = int(cfg.get("max_messages", 10))
-        ordered = order_slots(fresh)
-        # Buchungs-Links nur fuer die Slots, die eine Einzelnachricht bekommen
-        resolve_booking_links(ordered[:limit], cfg["id_cuadro"], session=sess)
-        msgs = build_messages(ordered, cfg["id_cuadro"], limit)
+        # Zusammenhaengende Startzeiten zu Fenstern buendeln, dann je Fenster
+        # den Link fuer den ERSTEN Slot holen
+        groups = group_slots(fresh)
+        resolve_booking_links(groups[:limit], cfg["id_cuadro"], session=sess)
+        msgs = build_messages(groups, cfg["id_cuadro"], limit)
         for i, text in enumerate(msgs):
             if i:
                 time.sleep(0.4)     # Telegram nicht mit einem Burst bewerfen
@@ -331,7 +332,8 @@ def run() -> int:
                 print(f"Zustand nicht fortgeschrieben, {len(fresh)} Slots werden "
                       f"beim naechsten Lauf erneut gemeldet.", file=sys.stderr)
                 return 1
-        print(f"{len(fresh)} neue freie Slots in {sent} Nachricht(en) gemeldet.")
+        print(f"{len(fresh)} neue Slots in {len(groups)} Fenster(n), "
+              f"{sent} Nachricht(en) gesendet.")
     else:
         print("Keine neuen freien Slots.")
 
@@ -434,20 +436,37 @@ def resolve_booking_links(slots: list[dict], id_cuadro: str,
 
 
 def build_slot_message(m: dict, id_cuadro: str) -> str:
-    """Eine Nachricht fuer genau EINEN buchbaren Slot."""
+    """
+    Eine Nachricht fuer EIN buchbares Fenster (Ergebnis von group_slots).
+    Funktioniert auch mit einem einzelnen Slot - dann fehlen `count`/`end_min`
+    und es wird der Block selbst angezeigt.
+    """
     d = m["date"]
-    end = _hhmm(m["start_min"] + m["dur"])
+    count = m.get("count", 1)
+    end = _hhmm(m.get("end_min", m["start_min"] + m["dur"]))
+
+    if count > 1:
+        # durchgehend freie Strecke: Fenster nennen, Startzeiten nur als Anzahl
+        zeile = (f"📅 {WEEKDAYS[d.weekday()]} {d.strftime('%d.%m.%Y')} · "
+                 f"<b>{m['start']}–{end}</b> frei\n"
+                 f"📋 Regel: {m['rule']} · {count} mögliche Starts à {m['dur']} Min")
+        text_link = f"Ab {m['start']} buchen ({m['dur']} Min)"
+    else:
+        zeile = (f"📅 {WEEKDAYS[d.weekday()]} {d.strftime('%d.%m.%Y')} · "
+                 f"<b>{m['start']}–{end}</b> ({m['dur']} Min)\n"
+                 f"📋 Regel: {m['rule']}")
+        text_link = "Diesen Slot buchen"
+
     if m.get("book_url"):
-        link = f"🔗 <a href=\"{m['book_url']}\">Diesen Slot buchen</a>"
+        link = f"🔗 <a href=\"{m['book_url']}\">{text_link}</a>"
     else:
         link = (f"🔗 <a href=\"{booking_url(id_cuadro)}\">Buchungsplan öffnen</a> "
                 f"— dort das Datum {d.strftime('%d.%m.')} im Kalender wählen")
+
     return (
         f"ALAAARRRM ALAAARRRM\n"
         f"🎾 <b>{m['court_name']}</b> frei\n"
-        f"📅 {WEEKDAYS[d.weekday()]} {d.strftime('%d.%m.%Y')} · "
-        f"<b>{m['start']}–{end}</b> ({m['dur']} Min)\n"
-        f"📋 Regel: {m['rule']}\n"
+        f"{zeile}\n"
         f"{link}"
     )
 
@@ -457,19 +476,53 @@ def order_slots(fresh: list[dict]) -> list[dict]:
     return sorted(fresh, key=lambda m: (m["date"], m["start_min"], m["court_name"]))
 
 
-def build_messages(fresh: list[dict], id_cuadro: str, limit: int) -> list[str]:
+def group_slots(slots: list[dict]) -> list[dict]:
     """
-    Alle Nachrichten eines Laufs: eine pro Slot, chronologisch.
+    Aufeinanderfolgende Startzeiten desselben Courts am selben Tag zu EINEM
+    buchbaren Fenster zusammenfassen.
+
+    Beispiel: die Treffer 13:00 und 13:30 (je 90 Min) beschreiben nicht zwei
+    Angebote, sondern eine freie Strecke 13:00-15:00. Zwei Nachrichten dafuer
+    waeren Rauschen. Gebucht wird der erste Slot des Fensters - fuer den wird
+    auch der Buchungs-Token geholt.
+
+    Die Gruppe traegt alle Felder ihres ersten Slots weiter (court_id, modalidad,
+    start, dur ...), damit resolve_booking_links() unveraendert damit arbeitet.
+    """
+    groups: list[dict] = []
+    # court-weise sortieren, sonst reissen dazwischenliegende Courts die Kette
+    for m in sorted(slots, key=lambda x: (x["date"], x["court_id"], x["start_min"])):
+        g = groups[-1] if groups else None
+        anschluss = (g and g["court_id"] == m["court_id"] and g["date"] == m["date"]
+                     and m["start_min"] - g["last_start_min"] == m["step"])
+        if anschluss:
+            g["last_start_min"] = m["start_min"]
+            g["end_min"] = max(g["end_min"], m["start_min"] + m["dur"])
+            g["count"] += 1
+            g["slots"].append(m)
+        else:
+            groups.append({**m,
+                           "last_start_min": m["start_min"],
+                           "end_min": m["start_min"] + m["dur"],
+                           "count": 1,
+                           "slots": [m]})
+    groups.sort(key=lambda g: (g["date"], g["start_min"], g["court_name"]))
+    return groups
+
+
+def build_messages(groups: list[dict], id_cuadro: str, limit: int) -> list[str]:
+    """
+    Alle Nachrichten eines Laufs: eine pro zusammenhaengendem Fenster
+    (Ergebnis von group_slots), chronologisch.
     Ueber `limit` hinaus wird zusammengefasst statt geflutet - wichtig beim ersten
     Lauf (leeres state.json) oder nach einer Regelaenderung, wo alles "neu" ist.
     """
-    ordered = order_slots(fresh)
-    msgs = [build_slot_message(m, id_cuadro) for m in ordered[:limit]]
-    rest = ordered[limit:]
+    msgs = [build_slot_message(g, id_cuadro) for g in groups[:limit]]
+    rest = [s for g in groups[limit:] for s in g.get("slots", [g])]
     if rest:
         msgs.append(build_message(
             rest, id_cuadro,
-            title=f"➕ <b>{len(rest)} weitere freie Slots</b>"))
+            title=f"➕ <b>{len(groups) - limit} weitere freie Fenster</b>"))
     return msgs
 
 
