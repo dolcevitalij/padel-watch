@@ -2,17 +2,17 @@ day_close: '24:00'
 day_open: 00:00
 days_ahead: 14
 id_cuadro: '4'
-max_messages: 10
-# Play!Match: offene Partien, denen Spieler fehlen. Noch NICHT im Produktivlauf
-# aktiv - bisher nur in der Konsole testbar.
 match_rules:
-- name: Kurzfristig
-  enabled: true
-  stunden_voraus: 24
-  niveau_min: 0
-  min_frei: 1
-  clubs:
+- clubs:
   - HOP BRAUNSCHWEIG
+  enabled: true
+  min_frei: 1
+  name: Kurzfristig
+  niveau_min: 0
+  stunden_voraus: 72
+  zeit_von: '14:00'
+  zeit_bis: '20:00'
+max_messages: 10
 notify_on_error: true
 rules:
 - courts:

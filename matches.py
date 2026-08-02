@@ -18,6 +18,7 @@ import requests
 
 SEARCH_URL = f"{BASE}/Matches/Search.aspx"
 SPIELER_PRO_MATCH = 4
+WOCHENTAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
 MONATE = {"jan": 1, "feb": 2, "mär": 3, "mar": 3, "apr": 4, "mai": 5, "jun": 6,
           "jul": 7, "aug": 8, "sep": 9, "okt": 10, "nov": 11, "dez": 12}
@@ -129,6 +130,33 @@ def fetch_matches(session: tuple | None = None, timeout: int = 25) -> list[dict]
     return parse_matches(r.text)
 
 
+def _minuten(hhmm: str | None) -> int | None:
+    """'18:30' -> 1110. Leer/ungueltig -> None (= kein Filter)."""
+    if not hhmm or ":" not in str(hhmm):
+        return None
+    try:
+        h, m = str(hhmm).split(":")[:2]
+        return int(h) * 60 + int(m)
+    except ValueError:
+        return None
+
+
+def _im_zeitfenster(beginn: dt.datetime, von: int | None, bis: int | None) -> bool:
+    """
+    Liegt die Anfangszeit im Tagesfenster? Ist nur eine Grenze gesetzt, wirkt
+    auch nur diese. Ein Fenster ueber Mitternacht (22:00-02:00) wird als
+    Umschlag behandelt, weil die Anlage 24/7 offen hat.
+    """
+    if von is None and bis is None:
+        return True
+    t = beginn.hour * 60 + beginn.minute
+    if von is not None and bis is not None:
+        return von <= t <= bis if von <= bis else (t >= von or t <= bis)
+    if von is not None:
+        return t >= von
+    return t <= bis
+
+
 def filter_matches(matches: list[dict], rule: dict,
                    now: dt.datetime | None = None) -> list[dict]:
     """
@@ -136,6 +164,9 @@ def filter_matches(matches: list[dict], rule: dict,
 
     Felder der Regel:
       stunden_voraus  nur Partien, die innerhalb dieser Frist beginnen (Default 24)
+      zeit_von/bis    Tageszeit-Fenster der Anfangszeit ('HH:MM'), leer = egal;
+                      von > bis gilt als Fenster ueber Mitternacht
+      weekdays        Wochentage ('Mo'...'So'), leer = alle
       niveau_min      Untergrenze der Partie muss mindestens so hoch sein;
                       die Obergrenze wird bewusst ignoriert
       min_frei        mindestens so viele freie Plaetze (Default 1)
@@ -150,10 +181,16 @@ def filter_matches(matches: list[dict], rule: dict,
     clubs = [c.strip() for c in (rule.get("clubs") or []) if c.strip()]
     courts = [c.strip() for c in (rule.get("courts") or []) if c.strip()]
     sportart = (rule.get("sportart") or "").strip()
+    von, bis = _minuten(rule.get("zeit_von")), _minuten(rule.get("zeit_bis"))
+    tage = [d.strip() for d in (rule.get("weekdays") or []) if d.strip()]
 
     treffer = []
     for m in matches:
         if not (now <= m["beginn"] <= frist):
+            continue
+        if not _im_zeitfenster(m["beginn"], von, bis):
+            continue
+        if tage and WOCHENTAGE[m["beginn"].weekday()] not in tage:
             continue
         if m["frei"] < min_frei:
             continue
