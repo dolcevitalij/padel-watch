@@ -78,7 +78,7 @@ rules:
   - Mi
   windows:
   - from: '19:00'
-    to: 02:00
+    to: '20:00'
   - from: '21:00'
     to: '22:00'
   duration: 60
