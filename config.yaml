@@ -56,7 +56,7 @@ rules:
   - '14'
   - '15'
   duration: 60
-  name: Fr Training
+  name: Fr Trainingsstunde
   weekdays:
   - Fr
   windows:
@@ -71,17 +71,17 @@ rules:
   windows:
   - from: 04:00
     to: 06:00
-- name: Di/Mi Abend
+- courts: []
+  duration: 60
   enabled: true
+  name: Mi Trainingsspiel
   weekdays:
   - Di
   - Mi
   windows:
-  - from: '19:00'
+  - from: '18:30'
     to: '20:00'
   - from: '21:00'
-    to: '22:00'
-  duration: 60
-  courts: []
+    to: '22:30'
 token_expires: '2026-10-30'
 token_warn_days: 14
