@@ -190,9 +190,12 @@
       <div><label title="So viele Tage vorher kommt täglich eine Telegram-Warnung">Vorwarnung (Tage)</label>
         <input id="token_warn_days" type="number" min="1" max="60"></div>
     </div>
-    <div style="margin-top:14px">
-      <label><input type="checkbox" id="notify_on_error" style="width:auto;margin-right:8px">
-        Bei Abruf-Fehlern eine Telegram-Warnung senden</label>
+    <div class="row" style="margin-top:12px">
+      <div><label title="Erst ab so vielen Fehlläufen hintereinander wird gewarnt – einzelne Aussetzer des Club-Servers holt der nächste Lauf ohnehin nach">Warnen ab … Fehlern in Folge</label>
+        <input id="notify_after_errors" type="number" min="1" max="20"></div>
+      <div style="align-self:end">
+        <label class="inline"><input type="checkbox" id="notify_on_error">
+          Bei Abruf-Fehlern warnen</label></div>
     </div>
 
   </section>
@@ -322,6 +325,7 @@ async function boot(){
   $("#token_expires").value = cfg.token_expires ?? "";
   $("#token_warn_days").value = cfg.token_warn_days ?? 7;
   $("#notify_on_error").checked = !!cfg.notify_on_error;
+  $("#notify_after_errors").value = cfg.notify_after_errors ?? 2;
   // Fehlende Listen-/Textfelder ergaenzen, BEVOR der Vergleichsstand genommen
   // wird. Sonst legt schon das Antippen und Wiederabwaehlen eines Chips ein
   // neues Feld an und die Konfiguration gilt faelschlich als geaendert.
@@ -644,6 +648,7 @@ function cfgSnapshot(){
     rules: cfg && cfg.rules || [],
     match_rules: cfg && cfg.match_rules || [],
     notify_on_error: $("#notify_on_error").checked,
+    notify_after_errors: parseInt($("#notify_after_errors").value),
   });
 }
 function refreshDirty(){
@@ -714,6 +719,7 @@ async function saveConfig(){
     token_expires: $("#token_expires").value,
     token_warn_days: parseInt($("#token_warn_days").value),
     notify_on_error: $("#notify_on_error").checked,
+    notify_after_errors: parseInt($("#notify_after_errors").value),
   };
   const errs = validateConfig(draft);
   if(errs.length){

@@ -12,7 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 
-from fetch import BASE, HEADERS
+from fetch import BASE, HEADERS, mit_wiederholung
 
 import requests
 
@@ -125,9 +125,12 @@ def fetch_matches(session: tuple | None = None, timeout: int = 25) -> list[dict]
     else:
         sess = requests.Session()
         sess.headers.update(HEADERS)
-    r = sess.get(SEARCH_URL, timeout=timeout)
-    r.raise_for_status()
-    return parse_matches(r.text)
+    def hole():
+        r = sess.get(SEARCH_URL, timeout=timeout)
+        r.raise_for_status()
+        return r.text
+
+    return parse_matches(mit_wiederholung(hole))
 
 
 def _minuten(hhmm: str | None) -> int | None:

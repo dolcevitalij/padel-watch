@@ -219,6 +219,36 @@ def check_token_expiry(cfg: dict, state: dict) -> str | None:
     )
 
 
+def notify_error(cfg: dict, meta: dict, msg: str) -> None:
+    """
+    Abruf-Fehler protokollieren und erst ab mehreren Laeufen in Folge melden.
+
+    Grund: der Club-Server hat sporadisch Aussetzer (5 von 441 Laeufen mit
+    Read-Timeout). Ein einzelner kostet nichts - der naechste Lauf zehn Minuten
+    spaeter holt alles nach, weil der Diff gegen den letzten *erfolgreichen*
+    Stand vergleicht. Eine Warnung an die ganze Gruppe waere fuer so etwas
+    unangemessen; erst eine Serie deutet auf ein echtes Problem.
+
+    Der Zaehler steht in state.json unter meta.fehler_serie und wird bei
+    jedem erfolgreichen Lauf zurueckgesetzt.
+    """
+    serie = int(meta.get("fehler_serie", 0)) + 1
+    meta["fehler_serie"] = serie
+    schwelle = int(cfg.get("notify_after_errors", 2))
+    print(msg, file=sys.stderr)
+
+    if not cfg.get("notify_on_error"):
+        return
+    if serie < schwelle:
+        print(f"{serie}. Fehler in Folge - Meldeschwelle ist {schwelle}, "
+              f"noch keine Benachrichtigung.", file=sys.stderr)
+        return
+    try:
+        send_telegram(f"{msg}\n\n<i>{serie} Läufe in Folge betroffen.</i>")
+    except Exception as e:
+        print(f"Fehlermeldung nicht gesendet: {scrub(e)}", file=sys.stderr)
+
+
 def rules_for_weekday(cfg: dict, d: dt.date) -> list[dict]:
     """
     Regeln, die an diesem Wochentag greifen. Pausierte Regeln (enabled: false)
@@ -263,15 +293,10 @@ def run() -> int:
     try:
         sess = open_session(cfg["id_cuadro"], key_override)
     except Exception as e:
-        msg = f"⚠️ Padel-Watch: Verbindungsaufbau fehlgeschlagen: {scrub(e)}"
-        print(msg, file=sys.stderr)
-        if cfg.get("notify_on_error"):
-            try:
-                send_telegram(msg)
-            except Exception:
-                pass
-        # Slot-Zustand unveraendert lassen, aber den Warn-Merker sichern -
-        # sonst kaeme die Ablaufwarnung beim naechsten Lauf erneut
+        notify_error(cfg, meta,
+                     f"⚠️ Padel-Watch: Verbindungsaufbau fehlgeschlagen: {scrub(e)}")
+        # Slot-Zustand unveraendert lassen, aber Merker und Fehlerzaehler
+        # sichern - sonst kaeme die Ablaufwarnung beim naechsten Lauf erneut
         save_state(keep_state(old_state, meta))
         return 1
 
@@ -284,15 +309,11 @@ def run() -> int:
         try:
             payload = fetch_grid(cfg["id_cuadro"], fecha, key_override, session=sess)
         except Exception as e:
-            msg = f"⚠️ Padel-Watch: Abruf fuer {fecha} fehlgeschlagen: {scrub(e)}"
-            print(msg, file=sys.stderr)
-            if cfg.get("notify_on_error"):
-                try:
-                    send_telegram(msg)
-                except Exception:
-                    pass
+            notify_error(cfg, meta,
+                         f"⚠️ Padel-Watch: Abruf fuer {fecha} fehlgeschlagen: "
+                         f"{scrub(e)}")
             # abbrechen: Diff nicht auf Basis kaputter Daten schreiben,
-            # aber den Warn-Merker behalten
+            # aber Merker und Fehlerzaehler behalten
             save_state(keep_state(old_state, meta))
             return 1
 
@@ -353,13 +374,8 @@ def run() -> int:
                                               or "Play!Match"})
             seen_matches = gesehen      # ersetzt den Altstand nur bei Erfolg
         except Exception as e:
-            msg = f"⚠️ Padel-Watch: Match-Suche fehlgeschlagen: {scrub(e)}"
-            print(msg, file=sys.stderr)
-            if cfg.get("notify_on_error"):
-                try:
-                    send_telegram(msg)
-                except Exception:
-                    pass
+            notify_error(cfg, meta,
+                         f"⚠️ Padel-Watch: Match-Suche fehlgeschlagen: {scrub(e)}")
 
     # Versand VOR dem Schreiben des Zustands: sonst gelten Slots als gemeldet,
     # obwohl die Nachricht nie ankam - und der Persist-Schritt committet das mit
@@ -400,6 +416,11 @@ def run() -> int:
 
     if seen_matches:
         new_state["matches"] = sorted(seen_matches)
+
+    # Bis hierher heisst: alle Abrufe haben geklappt. Serie beenden, sonst
+    # wuerde irgendwann jeder einzelne Aussetzer die Schwelle reissen.
+    if meta.pop("fehler_serie", None):
+        print("Abrufe wieder in Ordnung, Fehlerzaehler zurueckgesetzt.")
 
     # Migrierte Gruppen-Id sichern und einmal darauf hinweisen: state.json ist
     # ein Repo-Artefakt und kann verloren gehen, das GitHub-Secret nicht.

@@ -11,7 +11,42 @@ funktioniert, falls der Token an die Session gebunden ist oder rotiert.
 """
 from __future__ import annotations
 import re
+import sys
+import time
+
 import requests
+
+# Aussetzer des Club-Servers sind Alltag: 5 von 441 Laeufen scheiterten an
+# einem Read-Timeout. Ein Wiederholungsversuch faengt das ab, statt den
+# ganzen Lauf zu verlieren.
+FLUECHTIG = (requests.exceptions.Timeout, requests.exceptions.ConnectionError)
+
+
+def mit_wiederholung(aufruf, versuche: int = 3, pause: float = 3.0):
+    """
+    `aufruf` bis zu `versuche` mal ausfuehren. Wiederholt wird nur bei
+    fluechtigen Fehlern - Timeout, Verbindungsabbruch, HTTP 5xx. Ein 404 oder
+    ein Auswertungsfehler wird sofort durchgelassen, dort hilft Warten nicht.
+    """
+    letzter: Exception | None = None
+    for n in range(1, versuche + 1):
+        try:
+            return aufruf()
+        except FLUECHTIG as e:
+            letzter, grund = e, type(e).__name__
+        except requests.exceptions.HTTPError as e:
+            code = e.response.status_code if e.response is not None else 0
+            if not 500 <= code < 600:
+                raise
+            letzter, grund = e, f"HTTP {code}"
+        # ausdruecklich `raise letzter`: ein nacktes `raise` hier hat keine
+        # aktive Ausnahme mehr und wuerde die eigentliche Ursache verdecken
+        if n == versuche:
+            raise letzter
+        print(f"Abruf fehlgeschlagen ({grund}), Versuch {n}/{versuche} - "
+              f"neuer Versuch in {pause:.0f}s", file=sys.stderr)
+        time.sleep(pause)
+        pause *= 2
 
 BASE = "https://kunden.hallofpadel.com"
 
@@ -65,8 +100,13 @@ def open_session(id_cuadro: str, key_override: str | None = None,
     sess.headers.update(HEADERS)
 
     grid_url = f"{BASE}/Booking/Grid.aspx?id={id_cuadro}"
-    r = sess.get(grid_url, timeout=timeout)
-    r.raise_for_status()
+
+    def hole():
+        antwort = sess.get(grid_url, timeout=timeout)
+        antwort.raise_for_status()
+        return antwort
+
+    r = mit_wiederholung(hole)
 
     key = key_override or extract_key(r.text)
     if not key:
@@ -83,20 +123,23 @@ def open_session(id_cuadro: str, key_override: str | None = None,
 
 def _post(sess, path: str, body: dict, grid_url: str, timeout: int = 20) -> dict:
     """POST auf einen srvc.aspx-Endpunkt, Header wie im Browser."""
-    r = sess.post(
-        f"{BASE}{path}",
-        json=body,
-        headers={
-            "Content-Type": "application/json; charset=UTF-8",
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-            "X-Requested-With": "XMLHttpRequest",
-            "Referer": grid_url,
-            "Origin": BASE,
-        },
-        timeout=timeout,
-    )
-    r.raise_for_status()
-    return r.json()
+    def sende():
+        r = sess.post(
+            f"{BASE}{path}",
+            json=body,
+            headers={
+                "Content-Type": "application/json; charset=UTF-8",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": grid_url,
+                "Origin": BASE,
+            },
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    return mit_wiederholung(sende)
 
 
 def _as_id(value):
