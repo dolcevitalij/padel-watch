@@ -90,6 +90,10 @@
        border-radius:6px;cursor:pointer;user-select:none;color:var(--mut)}
   .day.on{background:var(--win);border-color:var(--win);color:var(--onaccent);font-weight:600}
   .courts-pick{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  /* Zeitfenster-Zeile einer Regel: ✕ auf Höhe der Eingabefelder */
+  .winrow{align-items:flex-end;margin-bottom:8px}
+  .winrow>div{max-width:150px}
+  .winrow .x{padding-bottom:9px}
   .courts-pick .day.on{background:var(--free);border-color:var(--free)}
   .x{color:var(--mut);cursor:pointer;font-family:var(--mono);padding:4px 8px}
   .x:hover{color:var(--busy)}
@@ -329,7 +333,14 @@ async function boot(){
   // Fehlende Listen-/Textfelder ergaenzen, BEVOR der Vergleichsstand genommen
   // wird. Sonst legt schon das Antippen und Wiederabwaehlen eines Chips ein
   // neues Feld an und die Konfiguration gilt faelschlich als geaendert.
-  (cfg.rules||[]).forEach(r=>{ r.weekdays=r.weekdays||[]; r.courts=r.courts||[]; });
+  // Altbestand auf die Fensterliste heben: aus time_from/time_to wird ein
+  // Fenster. Der Produktivlauf versteht beides, gespeichert wird nur noch
+  // `windows` - das haelt die Regelkarte einheitlich.
+  (cfg.rules||[]).forEach(r=>{
+    r.weekdays=r.weekdays||[]; r.courts=r.courts||[];
+    if(!r.windows) r.windows = [{from: r.time_from||"18:00", to: r.time_to||"22:00"}];
+    delete r.time_from; delete r.time_to;
+  });
   (cfg.match_rules||[]).forEach(r=>{
     r.weekdays=r.weekdays||[]; r.clubs=r.clubs||[];
     r.zeit_von=r.zeit_von||""; r.zeit_bis=r.zeit_bis||"";
@@ -385,14 +396,18 @@ function renderRules(){
         <span class="x" onclick="delRule(${i})">entfernen ✕</span>
       </div>
       <div class="days" id="days${i}"></div>
-      <div class="row" style="margin-top:12px">
-        <div><label>von</label><input class="mono" value="${r.time_from||''}" oninput="cfg.rules[${i}].time_from=this.value"></div>
-        <div><label>bis</label><input class="mono" value="${r.time_to||''}" oninput="cfg.rules[${i}].time_to=this.value"></div>
-        <div><label>Dauer (Min)</label><input type="number" step="30" value="${r.duration||90}" oninput="cfg.rules[${i}].duration=parseInt(this.value)"></div>
+      <label style="margin-top:12px">Zeitfenster (mehrere möglich, „bis“ kleiner als „von“ = über Mitternacht)</label>
+      <div id="wins${i}"></div>
+      <div class="btnrow" style="margin-top:2px">
+        <button class="ghost" onclick="addWindow(${i})">+ Zeitfenster</button>
+        <div style="max-width:150px"><label>Dauer (Min)</label>
+          <input type="number" step="30" value="${r.duration||90}"
+                 oninput="cfg.rules[${i}].duration=parseInt(this.value)"></div>
       </div>
       <label style="margin-top:12px">Courts (leer = alle)</label>
       <div class="courts-pick" id="rcourts${i}"></div>`;
     box.appendChild(div);
+    renderWindows(i, div.querySelector("#wins"+i));
     const dbox = div.querySelector("#days"+i);
     DAYS.forEach(d=>{
       const on = (r.weekdays||[]).includes(d);
@@ -411,6 +426,30 @@ function renderRules(){
     });
   });
 }
+/* ---------- Zeitfenster einer Platz-Regel ---------- */
+function renderWindows(i, box){
+  const wins = cfg.rules[i].windows || [];
+  box.innerHTML = wins.map((w,j)=>`
+    <div class="row winrow">
+      <div><label>von</label><input class="mono" value="${w.from||''}"
+           oninput="cfg.rules[${i}].windows[${j}].from=this.value.trim()"></div>
+      <div><label>bis</label><input class="mono" value="${w.to||''}"
+           oninput="cfg.rules[${i}].windows[${j}].to=this.value.trim()"></div>
+      <span class="x" title="Fenster entfernen"
+            onclick="delWindow(${i},${j})">✕</span>
+    </div>`).join("")
+    || `<div class="note" style="margin:0">kein Fenster – die Regel meldet nichts</div>`;
+}
+function addWindow(i){
+  cfg.rules[i].windows = cfg.rules[i].windows || [];
+  cfg.rules[i].windows.push({from:"18:00", to:"22:00"});
+  renderRules(); refreshDirty();
+}
+function delWindow(i,j){
+  cfg.rules[i].windows.splice(j,1);
+  renderRules(); refreshDirty();
+}
+
 function syncDays(i){
   cfg.rules[i].weekdays = [...document.querySelectorAll("#days"+i+" .on")].map(e=>e.textContent);
   refreshDirty();
@@ -427,7 +466,8 @@ function toggleRule(i){
 }
 function addRule(){
   cfg.rules = cfg.rules||[];
-  cfg.rules.push({name:"Neue Regel",enabled:true,weekdays:["Mo"],time_from:"18:00",time_to:"21:00",duration:90,courts:[]});
+  cfg.rules.push({name:"Neue Regel", enabled:true, weekdays:["Mo"],
+                  windows:[{from:"18:00", to:"21:00"}], duration:90, courts:[]});
   renderRules(); refreshDirty();
 }
 function delRule(i){ cfg.rules.splice(i,1); renderRules(); refreshDirty(); }
@@ -453,9 +493,16 @@ function nextDateFor(weekdays){
 
 function loadRuleToPreview(i){
   const r = cfg.rules[i] || {};
+  // Die Vorschau kennt genau EIN Fenster an EINEM Tag. Bei mehreren Fenstern
+  // wird das erste geladen, ein Fenster über Mitternacht bis 24:00 gekappt -
+  // beides wird in der Kontextzeile ausdrücklich gesagt.
+  const wins = r.windows || [];
+  const w = wins[0] || {from:"18:00", to:"22:00"};
+  const ueber = isHHMM(w.from) && isHHMM(w.to) && toMin(w.to) <= toMin(w.from);
   loadedRule = {name:r.name||"ohne Namen", weekdays:[...(r.weekdays||[])],
-                time_from:r.time_from||"", time_to:r.time_to||"", duration:r.duration||90,
-                enabled:isEnabled(r)};
+                time_from:w.from, time_to: ueber ? "24:00" : w.to,
+                duration:r.duration||90, enabled:isEnabled(r),
+                fenster:wins.length, ueber, ueber_bis:w.to};
   $("#pv_from").value = loadedRule.time_from;
   $("#pv_to").value   = loadedRule.time_to;
   $("#pv_dur").value  = loadedRule.duration;
@@ -482,6 +529,13 @@ function updateDayHint(){
                || $("#pv_to").value   !== loadedRule.time_to
                || String($("#pv_dur").value) !== String(loadedRule.duration);
     lines.push(`Regel „${loadedRule.name}“ geladen${drift ? " · Werte inzwischen geändert" : ""}`);
+    if(loadedRule.fenster > 1)
+      lines.push(`Die Regel hat ${loadedRule.fenster} Zeitfenster — hier ist nur das`
+               + ` erste geladen. Die übrigen einzeln über „→ Vorschau“ prüfen.`);
+    if(loadedRule.ueber)
+      lines.push(`Fenster reicht über Mitternacht (bis ${loadedRule.ueber_bis}).`
+               + ` Die Vorschau zeigt einen Kalendertag, also nur bis 24:00 —`
+               + ` der Rest liegt am Folgetag.`);
     if(!loadedRule.enabled){
       warn = true;
       lines.push("⚠ Diese Regel ist pausiert — die Vorschau rechnet sie trotzdem durch,"
@@ -684,10 +738,16 @@ function validateConfig(d){
   // pausiert sind, und man will eine halbfertige Regel zwischenspeichern koennen.
   (d.rules||[]).filter(isEnabled).forEach((r,i)=>{
     const label = `Regel "${r.name || i+1}"`;
-    if(!isHHMM(r.time_from)) errs.push(`${label}: „von" (${r.time_from}) ist keine gültige Uhrzeit (HH:MM).`);
-    if(!isHHMM(r.time_to)) errs.push(`${label}: „bis" (${r.time_to}) ist keine gültige Uhrzeit (HH:MM).`);
-    if(isHHMM(r.time_from) && isHHMM(r.time_to) && toMin(r.time_from) >= toMin(r.time_to))
-      errs.push(`${label}: „von" muss vor „bis" liegen.`);
+    const wins = r.windows || [];
+    if(!wins.length) errs.push(`${label}: mindestens ein Zeitfenster nötig.`);
+    wins.forEach((w,j)=>{
+      const wl = `${label}, Fenster ${j+1}`;
+      if(!isHHMM(w.from)) errs.push(`${wl}: „von" (${w.from}) ist keine gültige Uhrzeit (HH:MM).`);
+      if(!isHHMM(w.to)) errs.push(`${wl}: „bis" (${w.to}) ist keine gültige Uhrzeit (HH:MM).`);
+      // von > bis ist erlaubt: Fenster über Mitternacht
+      if(isHHMM(w.from) && isHHMM(w.to) && toMin(w.from) === toMin(w.to))
+        errs.push(`${wl}: „von" und „bis" sind gleich – das Fenster ist leer.`);
+    });
     if(!Number.isInteger(r.duration) || r.duration <= 0)
       errs.push(`${label}: Dauer muss eine positive Zahl (Minuten) sein.`);
   });

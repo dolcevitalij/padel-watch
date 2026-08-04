@@ -25,7 +25,7 @@ import yaml
 import requests
 
 from fetch import BASE, fetch_grid, fetch_slot_options, open_session
-from core import find_matches
+from core import find_matches, hhmm_to_min
 from matches import build_match_messages, fetch_matches, filter_matches
 
 # Pfade relativ zu dieser Datei, nicht zum Arbeitsverzeichnis - damit auch die
@@ -260,6 +260,48 @@ def rules_for_weekday(cfg: dict, d: dt.date) -> list[dict]:
             if wd in r["weekdays"] and r.get("enabled", True)]
 
 
+def windows_of(rule: dict) -> list[tuple[int, int]]:
+    """
+    Alle Zeitfenster einer Regel als Minutenpaare.
+
+    Neu ist `windows` als Liste - eine Regel kann mehrere Fenster haben
+    ("Di/Mi 19-02 Uhr und 21-22 Uhr"). Fehlt die Liste, gelten die alten
+    Einzelfelder time_from/time_to, damit aeltere Konfigurationen laufen.
+    Ist `bis` <= `von`, reicht das Fenster ueber Mitternacht.
+    """
+    fenster = rule.get("windows")
+    if fenster:
+        return [(hhmm_to_min(w["from"]), hhmm_to_min(w["to"]))
+                for w in fenster if w.get("from") and w.get("to")]
+    return [(hhmm_to_min(rule["time_from"]), hhmm_to_min(rule["time_to"]))]
+
+
+def segments_for_day(cfg: dict, d: dt.date) -> list[tuple[dict, int, int]]:
+    """
+    Welche (Regel, Fensteranfang, Fensterende) gelten am Kalendertag `d`?
+
+    Ein Fenster ueber Mitternacht wird in zwei Abschnitte geteilt, denn der
+    Wochentag einer Regel bezieht sich auf den BEGINN des Fensters:
+      "Di 19:00-02:00"  ->  Dienstag 19:00-24:00  +  Mittwoch 00:00-02:00
+    Der zweite Abschnitt taucht also am Folgetag auf, obwohl Mittwoch in der
+    Regel gar nicht angekreuzt sein muss.
+    """
+    heute = WEEKDAYS[d.weekday()]
+    gestern = WEEKDAYS[(d.weekday() - 1) % 7]
+    segmente: list[tuple[dict, int, int]] = []
+    for r in cfg["rules"]:
+        if not r.get("enabled", True):
+            continue
+        tage = r.get("weekdays") or []
+        for von, bis in windows_of(r):
+            ueber_mitternacht = bis <= von
+            if heute in tage:
+                segmente.append((r, von, 1440 if ueber_mitternacht else bis))
+            if ueber_mitternacht and gestern in tage and bis > 0:
+                segmente.append((r, 0, bis))
+    return segmente
+
+
 # ------------------------------------------------------------------ #
 #  Hauptlauf
 # ------------------------------------------------------------------ #
@@ -301,8 +343,8 @@ def run() -> int:
         return 1
 
     for d in target_dates(cfg):
-        rules = rules_for_weekday(cfg, d)
-        if not rules:
+        segmente = segments_for_day(cfg, d)
+        if not segmente:
             continue
 
         fecha = fmt_fecha(d)
@@ -321,12 +363,12 @@ def run() -> int:
         seen_today: list[str] = []
         fresh_today: set[str] = set()   # gegen Doppel-Meldung bei ueberlappenden Regeln
 
-        for r in rules:
+        for r, von, bis in segmente:
             matches = find_matches(
                 payload,
                 court_ids=r["courts"] or None,
-                win_start_hhmm=r["time_from"],
-                win_end_hhmm=r["time_to"],
+                win_start_hhmm=_hhmm(von),
+                win_end_hhmm=_hhmm(bis),
                 duration_min=r["duration"],
                 day_open_hhmm=cfg["day_open"],
                 day_close_hhmm=cfg["day_close"],

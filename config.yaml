@@ -16,6 +16,7 @@ match_rules:
   zeit_bis: '20:30'
   zeit_von: '16:00'
 max_messages: 10
+notify_after_errors: 2
 notify_on_error: true
 rules:
 - courts:
@@ -26,11 +27,12 @@ rules:
   - '15'
   duration: 90
   name: Sa-So Vormittags
-  time_from: 09:00
-  time_to: '15:00'
   weekdays:
   - Sa
   - So
+  windows:
+  - from: 09:00
+    to: '15:00'
 - courts:
   - '16'
   - '17'
@@ -39,13 +41,14 @@ rules:
   - '15'
   duration: 90
   name: Mo-Do Nachmittags
-  time_from: '16:00'
-  time_to: '22:00'
   weekdays:
   - Mo
   - Di
   - Mi
   - Do
+  windows:
+  - from: '16:00'
+    to: '22:00'
 - courts:
   - '16'
   - '17'
@@ -54,18 +57,31 @@ rules:
   - '15'
   duration: 60
   name: Fr Training
-  time_from: '14:00'
-  time_to: '18:00'
   weekdays:
   - Fr
+  windows:
+  - from: '14:00'
+    to: '18:00'
 - courts: []
   duration: 90
   enabled: false
   name: Test
-  time_from: 04:00
-  time_to: 06:00
   weekdays:
   - Mo
+  windows:
+  - from: 04:00
+    to: 06:00
+- name: Di/Mi Abend
+  enabled: true
+  weekdays:
+  - Di
+  - Mi
+  windows:
+  - from: '19:00'
+    to: 02:00
+  - from: '21:00'
+    to: '22:00'
+  duration: 60
+  courts: []
 token_expires: '2026-10-30'
 token_warn_days: 14
-notify_after_errors: 2
