@@ -33,6 +33,7 @@ rules:
   windows:
   - from: 09:00
     to: '15:00'
+  enabled: false
 - courts:
   - '16'
   - '17'
@@ -60,7 +61,7 @@ rules:
   weekdays:
   - Fr
   windows:
-  - from: '14:00'
+  - from: '12:00'
     to: '18:00'
 - courts: []
   duration: 90
@@ -76,7 +77,6 @@ rules:
   enabled: true
   name: Mi Trainingsspiel
   weekdays:
-  - Di
   - Mi
   windows:
   - from: '18:30'
