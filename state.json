@@ -37,5 +37,8 @@
 "matches": [
 "2acdfe824041be975425c483d0226d23@2",
 "7b4c2b4f0d2cfd652cc69382160c05d2@3"
-]
+],
+"meta": {
+"fehler_serie": 1
+}
 }
