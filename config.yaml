@@ -33,7 +33,7 @@ rules:
   - So
   windows:
   - from: 09:00
-    to: '16:00'
+    to: '17:00'
 - courts:
   - '16'
   - '17'
