@@ -26,14 +26,14 @@ rules:
   - '14'
   - '15'
   duration: 90
+  enabled: true
   name: Sa-So Vormittags
   weekdays:
   - Sa
   - So
   windows:
   - from: 09:00
-    to: '15:00'
-  enabled: false
+    to: '16:00'
 - courts:
   - '16'
   - '17'
