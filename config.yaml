@@ -41,6 +41,7 @@ rules:
   - '14'
   - '15'
   duration: 90
+  enabled: true
   name: Mo-Do Nachmittags
   weekdays:
   - Mo
@@ -50,7 +51,6 @@ rules:
   windows:
   - from: '16:00'
     to: '22:00'
-  enabled: false
 - courts:
   - '16'
   - '17'
@@ -58,13 +58,13 @@ rules:
   - '14'
   - '15'
   duration: 60
+  enabled: true
   name: Fr Trainingsstunde
   weekdays:
   - Fr
   windows:
   - from: '12:00'
     to: '18:00'
-  enabled: false
 - courts: []
   duration: 90
   enabled: false
@@ -76,14 +76,12 @@ rules:
     to: 06:00
 - courts: []
   duration: 60
-  enabled: false
-  name: Mi Trainingsspiel
+  enabled: true
+  name: Di Trainingsspiel
   weekdays:
-  - Mi
+  - Di
   windows:
-  - from: '18:30'
-    to: '20:00'
-  - from: '21:00'
-    to: '22:30'
+  - from: '18:00'
+    to: '19:30'
 token_expires: '2026-10-30'
 token_warn_days: 14
