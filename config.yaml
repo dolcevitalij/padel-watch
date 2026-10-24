@@ -5,12 +5,10 @@ id_cuadro: '4'
 match_rules:
 - clubs:
   - HOP BRAUNSCHWEIG
-  - HOP WOLFENBÜTTEL
-  - HOP WENDEBURG
-  enabled: false
+  enabled: true
   min_frei: 1
   name: PlayMatch 3 Tage
-  niveau_min: 2
+  niveau_min: 2.75
   stunden_voraus: 72
   weekdays: []
   zeit_bis: '20:30'
@@ -26,7 +24,7 @@ rules:
   - '14'
   - '15'
   duration: 90
-  enabled: true
+  enabled: false
   name: Sa-So Vormittags
   weekdays:
   - Sa
@@ -49,7 +47,7 @@ rules:
   - Mi
   - Do
   windows:
-  - from: '16:00'
+  - from: '17:00'
     to: '22:00'
 - courts:
   - '16'
@@ -74,7 +72,12 @@ rules:
   windows:
   - from: 04:00
     to: 06:00
-- courts: []
+- courts:
+  - '16'
+  - '17'
+  - '13'
+  - '14'
+  - '15'
   duration: 60
   enabled: true
   name: Di Trainingsspiel
