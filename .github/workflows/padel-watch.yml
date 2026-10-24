@@ -22,6 +22,11 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # Runner laufen in UTC. Ohne das waere date.today() zwischen 0 und 2 Uhr der
+    # Vortag, und matches.py verglich datetime.now() (UTC) mit Anfangszeiten in
+    # Ortszeit - schon begonnene Partien galten bis zu zwei Stunden als kommend.
+    env:
+      TZ: Europe/Berlin
     steps:
       - uses: actions/checkout@v4
 
