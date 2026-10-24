@@ -13,7 +13,7 @@ match_rules:
   weekdays: []
   zeit_bis: '20:30'
   zeit_von: '16:00'
-max_messages: 10
+max_messages: 9
 notify_after_errors: 2
 notify_on_error: true
 rules:
