@@ -83,5 +83,5 @@ rules:
   windows:
   - from: '18:00'
     to: '19:30'
-token_expires: '2026-10-30'
+token_expires: '2027-04-29'
 token_warn_days: 14
