@@ -7,6 +7,17 @@ REM und die alte antwortet weiter, ggf. mit veralteter .env).
 powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue) { exit 1 } else { exit 0 }"
 if errorlevel 1 goto laeuftschon
 
+REM Erst den Stand von GitHub holen: wurde online gespeichert, zeigte die
+REM Konsole sonst die alte config.yaml - und Speichern + publish-config
+REM wuerde die Online-Aenderung ueberschreiben oder in einen Konflikt laufen.
+echo Hole aktuellen Stand von GitHub ...
+git pull --rebase --autostash -q
+if errorlevel 1 (
+    echo.
+    echo WARNUNG: git pull fehlgeschlagen - die Konsole zeigt evtl. einen veralteten Stand.
+    echo.
+)
+
 echo Starte Padel-Watch Testkonsole auf http://localhost:5000 ...
 echo Chrome oeffnet sich automatisch, sobald der Server antwortet.
 echo Zum Beenden: dieses Fenster schliessen oder Strg+C.

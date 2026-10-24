@@ -1,0 +1,5 @@
+# Fuer die Web-UI auf Render (render.yaml). Der GitHub-Lauf braucht nur
+# requirements.txt und bleibt damit schlank.
+-r requirements.txt
+Flask>=3.0
+gunicorn>=22

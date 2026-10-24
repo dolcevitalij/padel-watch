@@ -155,6 +155,8 @@ optionale Telegram-Warnung (`notify_on_error`), damit stille Ausfälle auffallen
 | `padel_watch.py` | Orchestrierung: Abruf → Filter → Diff → Telegram | Logik getestet; Telegram-Pfad noch nicht live |
 | `test_key.py` | Einmaliger Verbindungs-/key-Test | **grün** ✅ |
 | `webapp.py` + `templates/` | **Test-/Konfig-Weboberfläche** (siehe §6) | **läuft lokal** ✅, Vorschau verifiziert |
+| `config_store.py` | Speicherort der Konfiguration für die Web-UI: Datei oder GitHub-API (§11) | lokal getestet |
+| `render.yaml`, `requirements-web.txt` | Online-Betrieb der Web-UI auf Render (§11) | vorbereitet |
 | `.github/workflows/padel-watch.yml` | Cron-Job | fertig |
 | `requirements.txt` | Runtime-Deps (`requests`, `PyYAML`) | fertig |
 | `requirements-dev.txt` | + `Flask` (nur für die Web-UI) | fertig |
@@ -464,3 +466,53 @@ Ob kurzfristige Ersatzgesuche (< 24 h vor Spielbeginn) überhaupt gelistet werde
 für den 03.08. aber ebenfalls keine Partie mit freien Plätzen. Falls sich eine Sperre
 bestätigt, wäre der Buchungsplan die bessere Quelle: dort steht die Platzzahl direkt an
 der Belegung, und er wird ohnehin jede Runde abgerufen.
+
+---
+
+## 11. Online-Betrieb der Web-UI auf Render
+
+Die Konsole läuft zusätzlich zum lokalen Weg auf Render (Free Web Service), damit sie
+ohne PC nutzbar ist, z. B. vom Handy. **Ohne die neuen Umgebungsvariablen verhält sich
+die App lokal genau wie vorher** (Datei + `publish-config.bat`).
+
+**Speichern:** `config_store.py`. Sind `GITHUB_CONFIG_TOKEN` und `GITHUB_REPO` gesetzt,
+liest und committet die App `config.yaml` über die Contents-API, sonst die lokale Datei.
+Auf Render ist das Pflicht: Das Dateisystem ist flüchtig, und eine Datei auf dem Server
+erreicht den GitHub-Lauf nie. Schutz vor gleichzeitigen Änderungen ist der `sha` der
+Datei. Der Browser bekommt ihn beim Laden (Header `X-Config-Version`) und schickt ihn
+beim Speichern zurück. Er wird absichtlich nicht im Server gemerkt, weil Render den
+Prozess nach jedem Einschlafen neu startet. Ein veralteter `sha` ergibt 409 und eine
+Meldung in der UI, überschrieben wird nichts. Die `state.json`-Commits des Bots stören
+nicht, weil der `sha` pro Datei gilt.
+
+**Login:** `APP_PASSWORD` (leer = kein Login) und `SECRET_KEY` für das Cookie
+(30 Tage, `Secure` auf Render, `SameSite=Lax`). Läuft die App auf Render (`RENDER=true`,
+setzt Render selbst) ohne Passwort, antwortet sie überall mit 503. Eine versehentlich
+offene Konsole ist damit ausgeschlossen. `/healthz` bleibt offen für den Health-Check.
+
+**Zwei Tokens, absichtlich getrennt:**
+
+| Token | Rechte | liegt bei | Ablauf überwacht durch |
+|---|---|---|---|
+| Cron-Token (`GITHUB_TOKEN` lokal, `GH_TOKEN` im Worker) | Actions: Read and write | Cron-Dienst (Drittanbieter) | `token_expires` → Telegram (§9) |
+| `GITHUB_CONFIG_TOKEN` | Contents: Read and write | Render, optional lokale `.env` | Hinweis in der Konsole, Datum kommt aus GitHubs Antwort |
+
+Der Cron-Token liegt bei einem Drittanbieter und soll nur Läufe starten können. Mit
+Schreibrechten auf den Code könnte er `padel_watch.py` ändern, das mit den Secrets läuft.
+
+**Render-Details** (`render.yaml`):
+- `buildFilter.ignoredPaths: [state.json, config.yaml]`. Sonst löst jeder Bot-Commit
+  (~144/Tag) und jedes Speichern einen Redeploy aus.
+- `TZ=Europe/Berlin`, sonst ist `date.today()` zwischen 0 und 2 Uhr der Vortag.
+- gunicorn mit 1 Worker und 4 Threads, Timeout 120 s (Vorschau mit Buchungs-Links).
+- Free-Plan: schläft nach 15 Min ohne Zugriff ein, der erste Aufruf danach dauert
+  30–60 s. Die Überwachung betrifft das nicht, die läuft auf GitHub Actions.
+
+**Lokal und online gemischt:** `start-webapp.bat` holt vor dem Start `git pull`, damit
+die lokale Konsole nach einer Online-Änderung nicht mit der alten `config.yaml` startet.
+Steht `GITHUB_CONFIG_TOKEN` auch in der lokalen `.env`, sehen beide Wege ohnehin
+denselben Stand.
+
+**Bekannte Grenze:** `apply_chat_override()` liest die migrierte Chat-Id aus der
+`state.json` des Deploys, die veraltet sein kann. Das betrifft nur die
+Telegram-Testnachricht und nur, wenn die Gruppen-Id migriert wurde.

@@ -57,6 +57,8 @@
         border:1px solid var(--line);border-radius:999px;color:var(--mut)}
   .pill.ok{color:var(--free);border-color:var(--free)}
   .pill.err{color:var(--busy);border-color:var(--busy)}
+  .pill.plain{margin-left:0}
+  header .logout{font-size:12.5px}
   main{max-width:1000px;margin:0 auto;padding:22px;display:grid;gap:20px}
   /* Trennt "Einstellen" von "Pruefen" */
   .grouphead{display:flex;align-items:center;gap:12px;margin:8px 2px -8px;
@@ -169,12 +171,15 @@
 <body>
 <header>
   <h1>Padel-Watch</h1>
-  <span class="sub">Lokale Test- &amp; Konfigurationskonsole</span>
+  <span class="sub">Test- &amp; Konfigurationskonsole</span>
   <button id="themeBtn" onclick="toggleTheme()" title="Zwischen hellem und dunklem Design wechseln"></button>
   <span id="conn" class="pill">nicht getestet</span>
+  <span id="mode" class="pill plain" hidden></span>
+  <a id="logout" class="logout" href="/logout" hidden>Abmelden</a>
 </header>
 
 <main>
+  <div id="storeWarn" class="status err" hidden></div>
   <p class="grouphead">Einstellen</p>
 
   <!-- GRUNDEINSTELLUNGEN -->
@@ -315,12 +320,48 @@ let CLUBS = [];
 let cfg = null;
 let loadedRule = null;   // welche Regel gerade in der Vorschau liegt
 let savedSnap = "";      // Stand der zuletzt gespeicherten config.yaml
+let cfgVersion = null;   // sha der geladenen config.yaml (nur GitHub-Modus)
+let storeMode = "lokal";
+
+/* fetch fuer die eigene API: ist der Login abgelaufen, zur Anmeldung */
+async function api(url, opts){
+  const r = await fetch(url, opts);
+  if(r.status === 401){ location.href = "/login"; throw new Error("nicht angemeldet"); }
+  return r;
+}
+
+async function loadStatus(){
+  const st = await (await api("/api/status")).json();
+  storeMode = st.mode;
+  const m = $("#mode");
+  m.textContent = st.mode === "github" ? "online · GitHub" : "lokal";
+  m.title = st.mode === "github" ? "Speichern committet config.yaml direkt ins Repo"
+                                 : "Speichern schreibt die lokale config.yaml (danach publish-config)";
+  m.hidden = false;
+  $("#logout").hidden = !st.login;
+  // Der Speicher-Token ist ein anderer als der Cron-Token im Feld „Token läuft ab"
+  if(st.token_expires){
+    const days = Math.floor((new Date(st.token_expires) - new Date()) / 86400000);
+    if(days < 14){
+      const w = $("#storeWarn");
+      w.textContent = (days < 0 ? "Der Speicher-Token (GITHUB_CONFIG_TOKEN) ist abgelaufen."
+                                : `Der Speicher-Token (GITHUB_CONFIG_TOKEN) läuft in ${days} Tag(en) ab.`)
+        + " Neuen Token auf GitHub erzeugen (nur dieses Repo, Contents: Read and write)"
+        + " und bei Render bzw. in der .env eintragen.";
+      w.hidden = false;
+    }
+  }
+}
 
 async function boot(){
   applyTheme(document.documentElement.dataset.theme === "dark");  // Beschriftung setzen
-  COURTS = await (await fetch("/api/courts")).json();
-  CLUBS  = await (await fetch("/api/match-clubs")).json();
-  cfg = await (await fetch("/api/config")).json();
+  COURTS = await (await api("/api/courts")).json();
+  CLUBS  = await (await api("/api/match-clubs")).json();
+  const cr = await api("/api/config");
+  cfg = await cr.json();
+  if(!cr.ok){ setStatus("#cfgStatus", false, "Konfiguration nicht geladen: " + (cfg.error || cr.status)); return; }
+  cfgVersion = cr.headers.get("X-Config-Version");
+  loadStatus();
   $("#id_cuadro").value = cfg.id_cuadro;
   $("#days_ahead").value = cfg.days_ahead;
   $("#day_open").value = cfg.day_open;
@@ -660,7 +701,7 @@ async function previewMatchRule(i){
   $("#mmResult").innerHTML = ""; $("#mmMsg").innerHTML = "";
   const soft = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   $("#mmPreview").scrollIntoView({behavior: soft ? "smooth" : "auto", block:"start"});
-  const j = await (await fetch("/api/match-preview",{method:"POST",
+  const j = await (await api("/api/match-preview",{method:"POST",
     headers:{"Content-Type":"application/json"}, body:JSON.stringify(r)})).json();
   if(!j.ok){ setStatus("#mmStatus", false, "Fehler: "+j.error); return; }
 
@@ -787,10 +828,15 @@ async function saveConfig(){
     return;
   }
   cfg = draft;
-  const r = await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cfg)});
+  const headers = {"Content-Type":"application/json"};
+  if(cfgVersion) headers["X-Config-Version"] = cfgVersion;
+  const r = await api("/api/config",{method:"POST",headers,body:JSON.stringify(cfg)});
   const j = await r.json();
-  setStatus("#cfgStatus", j.ok, j.ok ? "Gespeichert." : ("Fehler: "+(j.error||"?")));
-  if(j.ok){ savedSnap = cfgSnapshot(); }
+  const okMsg = j.mode === "github"
+    ? `Gespeichert und auf GitHub veröffentlicht (Commit ${j.commit}). Gilt ab dem nächsten Lauf.`
+    : "Gespeichert. Mit publish-config.bat veröffentlichen.";
+  setStatus("#cfgStatus", j.ok, j.ok ? okMsg : ("Fehler: "+(j.error||"?")));
+  if(j.ok){ savedSnap = cfgSnapshot(); if(j.version) cfgVersion = j.version; }
   refreshDirty();
 }
 
@@ -800,7 +846,7 @@ function setStatus(sel, ok, msg){
 
 async function testConn(){
   setStatus("#connStatus", true, "Teste …");
-  const j = await (await fetch("/api/test-connection",{method:"POST"})).json();
+  const j = await (await api("/api/test-connection",{method:"POST"})).json();
   if(j.ok){
     $("#conn").className = "pill ok"; $("#conn").textContent = "verbunden";
     setStatus("#connStatus", true, "OK ("+j.date+"):\n"+j.courts.map(c=>`  [${c.id}] ${c.name} — ${c.count} Belegungen`).join("\n"));
@@ -811,7 +857,7 @@ async function testConn(){
 }
 async function testTg(){
   setStatus("#connStatus", true, "Sende …");
-  const j = await (await fetch("/api/test-telegram",{method:"POST"})).json();
+  const j = await (await api("/api/test-telegram",{method:"POST"})).json();
   setStatus("#connStatus", j.ok, j.ok ? "Telegram-Testnachricht gesendet." : ("Fehler: "+j.error));
 }
 
@@ -822,7 +868,7 @@ async function runPreview(){
     rule: loadedRule ? loadedRule.name : null,    // Regelname erscheint in der Nachricht
     links: $("#pv_links").checked};               // Buchungs-Token pro Slot holen
   setStatus("#pvStatus", true, "Lade …"); $("#pvResult").innerHTML=""; $("#pvMsg").innerHTML="";
-  const j = await (await fetch("/api/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
+  const j = await (await api("/api/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
   if(!j.ok){ setStatus("#pvStatus", false, "Fehler: "+j.error); return; }
   setStatus("#pvStatus", true, j.count+" passende freie Startzeit(en) gefunden.");
   renderTimelines(j);

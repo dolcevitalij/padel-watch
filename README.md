@@ -25,6 +25,9 @@ testen und Regeln als **Timeline-Vorschau** prüfen (belegt/frei/Wunschfenster) 
 alles ohne Telegram-Versand. Für die Telegram-Testnachricht vorher
 `TELEGRAM_BOT_TOKEN` und `TELEGRAM_CHAT_ID` als Umgebungsvariablen setzen.
 
+Dieselbe Konsole läuft auch **online auf Render** (kostenlos, mit Passwort,
+speichert direkt ins Repo) – Einrichtung in `HANDOFF.md` §11 und `render.yaml`.
+
 ## Wie es funktioniert
 
 ```
@@ -100,6 +103,8 @@ TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=x python padel_watch.py
 | `padel_watch.py` | Orchestrierung + Telegram + Diff |
 | `state.json` | zuletzt gesehene freie Slots (auto-verwaltet) |
 | `.github/workflows/padel-watch.yml` | Cron-Job |
+| `webapp.py`, `config_store.py`, `templates/` | Konfigurations-Web-UI |
+| `render.yaml`, `requirements-web.txt` | Online-Betrieb der Web-UI auf Render |
 
 ## Hinweise
 - **Fairness:** 10-Min-Takt + 1 s Pause je Request. Nicht aggressiver stellen –

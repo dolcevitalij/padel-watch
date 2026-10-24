@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Padel-Watch  -  lokale Test- & Konfigurationsumgebung (Web-UI).
+Padel-Watch  -  Test- & Konfigurationsumgebung (Web-UI).
 
-Starten:   python webapp.py
+Lokal starten:   python webapp.py
 Dann im Browser:  http://localhost:5000
+Online: auf Render (render.yaml), Start dort ueber gunicorn.
 
-Zweck (reines Dev-Tool, laeuft nur lokal):
+Zweck:
   - config.yaml bequem im Browser bearbeiten und speichern
+    (lokal in die Datei oder direkt ins Repo, siehe config_store.py)
   - Verbindung + key-Extraktion testen
   - Regeln als Vorschau gegen echte Daten pruefen (Timeline je Court),
     OHNE Telegram-Versand
@@ -16,20 +18,28 @@ Umgebungsvariablen (optional, nur fuer die jeweilige Funktion):
   KEY_OVERRIDE         fester key, falls Auto-Extraktion scheitert
   TELEGRAM_BOT_TOKEN   fuer die Telegram-Testnachricht
   TELEGRAM_CHAT_ID
+  GITHUB_CONFIG_TOKEN  zusammen mit GITHUB_REPO: config.yaml per GitHub-API
+  GITHUB_REPO          lesen und committen statt in die lokale Datei
+  APP_PASSWORD         Login fuer die Konsole; leer = kein Login (nur lokal!)
+  SECRET_KEY           signiert das Login-Cookie
 """
 from __future__ import annotations
+import hmac
 import os
 import datetime as dt
+import time
 
-import yaml
-from flask import Flask, request, jsonify, render_template
+from flask import (Flask, request, jsonify, redirect, render_template, session,
+                   url_for)
+
+import config_store
 
 from core import parse_courts, find_matches, merge_intervals
 from fetch import fetch_grid, open_session
 from matches import build_match_message, fetch_matches, filter_matches
 # dieselbe Formatierung, Link-Ermittlung und Telegram-Anbindung wie im Produktivlauf
 from padel_watch import (apply_chat_override, build_messages, group_slots,
-                         load_yaml, order_slots, resolve_booking_links, scrub,
+                         order_slots, resolve_booking_links, scrub,
                          send_telegram, target_chat_id)
 
 app = Flask(__name__)
@@ -67,6 +77,22 @@ def load_env(path: str = ENV_PATH) -> None:
 
 load_env()
 
+store = config_store.from_env(CONFIG_PATH)
+
+# Login. Render setzt RENDER=true selbst - dort ist eine Konsole ohne Passwort
+# nie gewollt: jeder koennte Regeln aendern und ueber den Bot senden.
+APP_PASSWORD = os.environ.get("APP_PASSWORD") or ""
+ON_RENDER = os.environ.get("RENDER") == "true"
+# Ohne SECRET_KEY ein zufaelliger: lokal heisst das nur, nach einem Neustart
+# neu anmelden
+app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",       # Fremdseiten-POSTs bekommen das Cookie nicht
+    SESSION_COOKIE_SECURE=ON_RENDER,     # lokal laeuft http, da wuerde es nie gesendet
+    PERMANENT_SESSION_LIFETIME=dt.timedelta(days=30),
+)
+
 # Bekannte Courts (aus den Live-Daten). Wird per "Verbindung testen" aktualisiert.
 KNOWN_COURTS = [
     {"id": "16", "name": "BS ZILLMANN"},
@@ -77,16 +103,8 @@ KNOWN_COURTS = [
 ]
 
 
-# encoding immer explizit: unter Windows waehlt open() sonst cp1252, und
-# Umlaute in Clubnamen ("HOP WOLFENBÜTTEL") machen die Datei fuer den
-# Produktivlauf unter Linux unlesbar (UnicodeDecodeError vor jeder Meldung).
 def load_cfg() -> dict:
-    return load_yaml(CONFIG_PATH)      # UTF-8 mit Rueckfall auf cp1252
-
-
-def save_cfg(c: dict) -> None:
-    with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
-        yaml.safe_dump(c, fh, allow_unicode=True, sort_keys=False)
+    return store.load()
 
 
 def fmt_fecha(d: dt.date) -> str:
@@ -192,6 +210,50 @@ def build_preview(payload: dict, cfg: dict, body: dict,
 
 
 # ------------------------------------------------------------------ #
+#  Login
+# ------------------------------------------------------------------ #
+@app.before_request
+def require_login():
+    if request.path == "/healthz":
+        return None
+    if ON_RENDER and not APP_PASSWORD:
+        return "APP_PASSWORD nicht gesetzt - Konsole gesperrt.", 503
+    if not APP_PASSWORD or session.get("auth") or request.path == "/login":
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "error": "Nicht angemeldet."}), 401
+    return redirect(url_for("login"))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not APP_PASSWORD:
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        given = (request.form.get("password") or "").encode()
+        if hmac.compare_digest(given, APP_PASSWORD.encode()):
+            session.clear()
+            session["auth"] = True
+            session.permanent = True
+            return redirect(url_for("index"))
+        time.sleep(1)                    # Durchprobieren ausbremsen
+        error = "Falsches Passwort."
+    return render_template("login.html", error=error)
+
+
+@app.get("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.get("/healthz")
+def healthz():
+    return "ok"
+
+
+# ------------------------------------------------------------------ #
 #  Routes
 # ------------------------------------------------------------------ #
 @app.get("/")
@@ -201,13 +263,33 @@ def index():
 
 @app.get("/api/config")
 def get_config():
-    return jsonify(load_cfg())
+    # Seitenaufbau liest immer frisch; der sha geht als Header mit, damit das
+    # spaetere Speichern weiss, gegen welchen Stand es schreibt
+    try:
+        cfg, version = store.load_versioned()
+    except Exception as e:
+        return jsonify({"ok": False, "error": scrub(e)}), 502
+    res = jsonify(cfg)
+    if version:
+        res.headers["X-Config-Version"] = version
+    return res
 
 
 @app.post("/api/config")
 def set_config():
-    save_cfg(request.get_json())
-    return jsonify({"ok": True})
+    try:
+        info = store.save(request.get_json(), request.headers.get("X-Config-Version"))
+    except config_store.ConfigConflict as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
+    except Exception as e:
+        return jsonify({"ok": False, "error": scrub(e)})
+    return jsonify({"ok": True, "mode": store.mode, **info})
+
+
+@app.get("/api/status")
+def status():
+    return jsonify({"mode": store.mode, "login": bool(APP_PASSWORD),
+                    "token_expires": store.token_expires})
 
 
 @app.get("/api/courts")

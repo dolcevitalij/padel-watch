@@ -1,0 +1,39 @@
+# Render-Blueprint fuer die Konfigurations-Web-UI (HANDOFF.md, "Online-Betrieb").
+# Einrichtung: dashboard.render.com -> New -> Blueprint -> dieses Repo.
+services:
+  - type: web
+    name: padel-watch-config
+    runtime: python
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: pip install -r requirements-web.txt
+    # Ein Worker reicht und haelt den Cache der Konfiguration an einer Stelle;
+    # Timeout hoch, weil die Vorschau mit Buchungs-Links mehrere Requests macht
+    startCommand: gunicorn webapp:app --workers 1 --threads 4 --timeout 120
+    healthCheckPath: /healthz
+    # Der Bot committet state.json alle 10 Minuten, die Web-UI selbst committet
+    # config.yaml. Beides braucht keinen neuen Build - ohne Filter gaebe es
+    # ~144 Redeploys am Tag und das Gratis-Build-Kontingent waere schnell weg.
+    buildFilter:
+      ignoredPaths:
+        - state.json
+        - config.yaml
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8            # wie im GitHub-Workflow
+      - key: TZ
+        value: Europe/Berlin     # sonst rechnet date.today() in UTC
+      - key: GITHUB_REPO
+        value: dolcevitalij/padel-watch
+      - key: SECRET_KEY
+        generateValue: true
+      # Werte im Dashboard eintragen (sync: false = nicht im Repo)
+      - key: APP_PASSWORD
+        sync: false
+      - key: GITHUB_CONFIG_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
