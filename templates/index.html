@@ -166,6 +166,28 @@
             white-space:nowrap;color:var(--mut);background:transparent}
   .pausebtn.active{color:var(--free);border-color:var(--free)}
   .pausebtn.off{color:var(--busy);border-color:var(--busy)}
+  /* Play!Match-Tabelle hat sieben Spalten - lieber seitlich wischen als die
+     ganze Seite verbreitern */
+  #mmResult{overflow-x:auto}
+  .status,.hint{overflow-wrap:anywhere}
+
+  /* Handy: nichts darf die Seite breiter als das Display machen */
+  @media (max-width:640px){
+    header{padding:14px 16px}
+    main{padding:14px 12px;gap:16px}
+    .card{padding:14px}
+    .rule{padding:12px}
+    /* Regelname bekommt die ganze Zeile, die Schalter rutschen darunter -
+       nebeneinander quetschten sie das Namensfeld auf ein paar Zeichen */
+    .rule .head{flex-wrap:wrap;gap:8px 12px}
+    .rule .head input{flex:1 1 100%}
+    .rule .head .x{padding:6px 4px}
+    label.inline{white-space:normal}
+    /* unter 16px zoomt iOS beim Antippen eines Feldes in die Seite */
+    input,select{font-size:16px}
+    .winrow>div{max-width:none}
+    .day{padding:7px 10px}
+  }
 </style>
 </head>
 <body>
